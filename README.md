@@ -1,5 +1,5 @@
 # SwingAI DayTrader — Revolut X (AI Agent, Day Trading)
-https://tomekfalek-cyber.github.io/swingai-daytrader-revolut/
+https://tomekfalek-cyber.github.io/SwingRAI-daytrader/
 
 Agent AI do handlu **intraday** na Revolut X, wykorzystujący koncepcje **Smart Money
 Concepts (SMC)**: Order Blocks, Fair Value Gaps, Liquidity Sweep, Break of
