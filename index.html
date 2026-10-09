@@ -356,7 +356,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
     fetch(PIN_BOT_BASE + '/session-check', { credentials: 'include' })
       .then(function(r){ return r.json(); })
       .then(function(d){ if (d && d.ok) hideOverlay(); else showOverlay(); })
-      .catch(function(){ showOverlay(); });
+      .catch(function(){ hideOverlay(); try{var n=document.createElement('div');n.textContent='TRYB LOKALNY (bez serwera)';n.style.cssText='position:fixed;bottom:6px;right:8px;z-index:99998;background:rgba(123,97,255,.15);color:#9b8cff;font:11px system-ui;padding:3px 8px;border-radius:6px';document.body.appendChild(n);}catch(e){} });
   }
   document.addEventListener('DOMContentLoaded', function() {
     checkSession();
@@ -380,7 +380,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           if (d && d.ok) { hideOverlay(); }
           else { err.textContent = (d && d.error) || 'Błąd'; input.value = ''; btn.disabled = false; }
         })
-        .catch(function() { err.textContent = 'Błąd połączenia'; btn.disabled = false; });
+        .catch(function() { hideOverlay(); });
     });
   });
   window._pinGateBase = PIN_BOT_BASE;
