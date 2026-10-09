@@ -1138,7 +1138,38 @@ async function btcGuardInfo() {
 // Worker /market -> Bybit, nie przez ten usuniety kod.
 function workerReady() { return !!(CFG.workerUrl && CFG.workerUrl.startsWith('https://')); }
 
+async function bybitKlines(sym,tf,limit){
+  limit=limit||200;
+  const pair=sym.replace('_','/').replace('/','');
+  const tfMap={'1d':'D','4h':'240','1h':'60','15m':'15','5m':'5'};
+  const itv=tfMap[tf]||'5';
+  const u='https://api.bybit.com/v5/market/kline?category=spot&symbol='+pair+'&interval='+itv+'&limit='+limit;
+  const r=await fetchWithTimeout(u,15000); const d=await r.json();
+  const list=(d&&d.result&&d.result.list)||[];
+  const rows=list.slice().reverse().map(function(k){return [Number(k[0]),Number(k[1]),Number(k[2]),Number(k[3]),Number(k[4]),Number(k[5])];});
+  if(!rows.length) throw new Error('Bybit: brak swiec '+pair);
+  return rows;
+}
+async function bybitTicker(sym){
+  const pair=sym.replace('_','/').replace('/','');
+  const r=await fetchWithTimeout('https://api.bybit.com/v5/market/tickers?category=spot&symbol='+pair,10000);
+  if(!r.ok) throw new Error('Bybit HTTP '+r.status);
+  const d=await r.json();
+  const t=(d&&d.result&&d.result.list&&d.result.list[0])||null;
+  if(!t) throw new Error('Bybit: brak danych '+pair);
+  const last=Number(t.lastPrice); const pct=Number(t.price24hPcnt)*100;
+  return {lastPrice:last, priceChangePercent:(isFinite(pct)?pct.toFixed(2):'0')};
+}
 async function getKlines(sym,tf,limit){
+  if (workerReady()) { try { return await getKlinesWorker(sym,tf,limit); } catch(e){ console.warn('worker klines -> Bybit direct:', e.message); } }
+  return bybitKlines(sym,tf,limit);
+}
+async function getTicker(sym){
+  if (workerReady()) { try { return await getTickerWorker(sym); } catch(e){ console.warn('worker ticker -> Bybit direct:', e.message); } }
+  return bybitTicker(sym);
+}
+
+async function getKlinesWorker(sym,tf,limit){
   limit=limit||200;
   // Revolut X format: "BTC/USDC" - to zamiana podkreslnika na slash, 1:1 z
   // revxInstrument() w workerze. Interval Revolut X = minuty, tak jak tfMap nizej.
@@ -1149,7 +1180,7 @@ async function getKlines(sym,tf,limit){
   const rows=Array.isArray(d.data)?d.data:[];
   return rows.slice(-limit).map(function(k){return [+k.start,+k.open,+k.high,+k.low,+k.close,+k.volume];});
 }
-async function getTicker(sym){
+async function getTickerWorker(sym){
   const rSym=sym.replace('_','/');
   const url=(CFG.workerUrl||'https://swingai-revolut.tomek-falek.workers.dev').replace(/\/+$/,'')+'/market?path='+encodeURIComponent('/1.0/public/tickers')+'&qs='+encodeURIComponent('symbols='+rSym);
   const r=await fetchWithTimeout(url,10000);
