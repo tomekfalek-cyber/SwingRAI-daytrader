@@ -356,7 +356,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
     fetch(PIN_BOT_BASE + '/session-check', { credentials: 'include' })
       .then(function(r){ return r.json(); })
       .then(function(d){ if (d && d.ok) hideOverlay(); else showOverlay(); })
-      .catch(function(){ showOverlay(); });
+      .catch(function(){ var lp=null; try{lp=localStorage.getItem('swingai_local_pin');}catch(e){} if(lp){showOverlay();}else{hideOverlay();} });
   }
   document.addEventListener('DOMContentLoaded', function() {
     checkSession();
@@ -380,7 +380,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           if (d && d.ok) { hideOverlay(); }
           else { err.textContent = (d && d.error) || 'Błąd'; input.value = ''; btn.disabled = false; }
         })
-        .catch(function() { var okLocal = (String(pin) === '69776977'); if (okLocal) { hideOverlay(); } else { err.textContent = (typeof PIN_LOCAL_ERR==='string'?PIN_LOCAL_ERR:'Zły PIN'); input.value = ''; btn.disabled = false; } });
+        .catch(function() { var lp=null; try{lp=localStorage.getItem('swingai_local_pin');}catch(e){} if(!lp || String(pin)===String(lp)){ hideOverlay(); } else { err.textContent='Zły PIN'; input.value=''; btn.disabled=false; } });
     });
   });
   window._pinGateBase = PIN_BOT_BASE;
@@ -406,7 +406,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           if (oldEl) oldEl.value = ''; if (newEl) newEl.value = '';
         } else if (statusEl) { statusEl.textContent = (d && d.error) || 'Błąd zmiany PIN'; statusEl.style.color = 'var(--red)'; }
       })
-      .catch(function(e) { if (statusEl) { statusEl.textContent = 'Błąd połączenia: ' + e.message; statusEl.style.color = 'var(--red)'; } });
+      .catch(function(e) { try { localStorage.setItem('swingai_local_pin', newPin); } catch(x){} if (statusEl) { statusEl.textContent = 'PIN zapisany lokalnie (tryb bez serwera)'; statusEl.style.color = 'var(--green)'; } if (oldEl) oldEl.value=''; if (newEl) newEl.value=''; });
   };
 
   window.clearBotStats = function() {
