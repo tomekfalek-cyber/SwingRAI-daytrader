@@ -1,4 +1,4 @@
-# SwingAI DayTrader — Revolut X (AI Agent, Day Trading)
+# SwingAI DayTrader —  (AI Agent, Day Trading)
 https://tomekfalek-cyber.github.io/SwingRAI-daytrader/
 
 Agent AI do handlu **intraday** na Revolut X, wykorzystujący koncepcje **Smart Money
@@ -12,7 +12,7 @@ statyczny podgląd interfejsu, serwowana bezpośrednio z GitHub Pages. Bez
 podłączonego Cloudflare Workera funkcje handlowe (Start, zapis konfiguracji,
 pobieranie danych rynkowych) nie będą działać — to oczekiwane na tym etapie.
 
-## Ograniczenie Revolut X — brak shortów
+## Ograniczenie — brak shortów
 
 Revolut X obsługuje wyłącznie handel spot (Market/Limit buy/sell) — **brak
 marginu i lewarowania**. Sygnały "short" wykrywane przez silnik SMC są
