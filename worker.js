@@ -1,1 +1,3 @@
-// temporary restore marker
+// SwingAI Bot 24/7 — Cloudflare Worker — REVOLUT X VERSION
+// Multi-TF DAY TRADING (1H+15min+5min)
+// PLACEHOLDER_WILL_REPLACE
