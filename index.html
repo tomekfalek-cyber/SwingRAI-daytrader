@@ -825,13 +825,13 @@ tr:hover td{background:rgba(123,97,255,.04);}
   <div class="form-row"><label>Stop Loss %</label><input id="cfg-sl" type="number" value="1" step="0.1" min="0.3" max="4"> <small class="lbl">Day trading: 0.8-1.5%</small></div>
   <div class="form-row"><label>Trailing Stop %</label><input id="cfg-trail" type="number" value="0.8" step="0.1" min="0.3" max="3"> <small class="lbl">Day trading: 0.6-1.2%</small></div>
   <div style="font-size:7.5pt;color:var(--text3);background:var(--bg4);border-radius:5px;padding:6px 8px;margin:-2px 0 8px;line-height:1.5">&#9888; Powyzsze TP/SL obowiazuje dla BTC/ETH/SOL/XRP. <b style="color:var(--text2)">PEPE ma wlasny, szerszy override: TP 3,5% / SL 1,8%</b> (wieksza naturalna zmiennosc memecoina — wazszy TP/SL powodowalby zbyt czeste wybijanie SL na normalnym szumie ceny).</div>
-  <div class="form-row"><label>Max pozycje</label><input id="cfg-maxpos" type="number" value="4" min="1" max="5"></div>
+  <div class="form-row"><label>Max pozycje</label><input id="cfg-maxpos" type="number" value="3" min="1" max="5"></div>
   <div class="form-row"><label>Rozmiar pozycji $</label><input id="cfg-size" type="number" value="15" min="10" max="10000"></div>
   <div class="form-row"><label>Skan co (minuty)</label><input id="cfg-interval" type="number" value="3" min="3" max="30"></div>
   <div class="form-row"><label>Alerty dźwiękowe</label><input id="cfg-sound" type="checkbox" checked onchange="CFG.soundAlerts=this.checked;saveCfg();"> <small class="lbl">Dźwięk przy wejściu/wyjściu z pozycji</small></div>
   <div class="form-row"><label>Paper saldo startowe $</label><input id="cfg-paper-bal" type="number" value="1000" min="100"></div>
   <div class="form-row"><label>Min Score BUY</label><input id="cfg-minscore" type="number" value="56" min="40" max="90"> <small class="lbl">55-62</small></div>
-  <div class="form-row"><label>Kelly — ryzyko %</label><input id="cfg-risk" type="number" value="2" min="0.5" max="5" step="0.5"></div>
+  <div class="form-row"><label>Kelly — ryzyko %</label><input id="cfg-risk" type="number" value="1.25" min="0.5" max="5" step="0.5"></div>
   <div class="form-row"><label>Fear &amp; Greed min</label><input id="cfg-fgmin" type="number" value="20" min="0" max="40"></div>
   <hr style="border-color:var(--border);margin:12px 0;">
   <div style="font-size:8.5pt;color:var(--text2);margin-bottom:8px">&#128241; Telegram (opcjonalne)</div>
@@ -910,7 +910,7 @@ let CFG = {
   revxApiKey:'', revxPrivKey:'',
   // Day trading: dużo ciaśniejsze poziomy niż swing (tam 12%/5%/6%) - pozycje
   // trzymane w ramach jednej sesji, nie tygodni. Ta sama poprawka co w worker.js.
-  tp:0.02, sl:0.01, trail:0.008, maxPos:4, riskPct:2, posSize:15,
+  tp:0.02, sl:0.01, trail:0.008, maxPos:3, riskPct:1.25, posSize:15,
   intervalMin:3, paperBal:1000, minScore:62, fgMin:20,
   tgToken:'', tgChat:'', soundAlerts:true
 };
