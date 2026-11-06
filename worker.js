@@ -1005,8 +1005,8 @@ async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adapti
   const bullBias = trendD === 2 && rsiD < 50;
 score = Math.max(0, Math.min(100, Math.round(score)));
 
-  if (price > vwap4h) { score += 8;  why.push('Ponad VWAP'); }
-  else                { score -= 5;  why.push('Ponizej VWAP'); }
+  if (price > vwap4h) { score += 8;  why.push('Ponad VWAP 15m'); }
+  else                { score -= 5;  why.push('Ponizej VWAP 15m'); }
   score = Math.max(0, Math.min(100, score));
 
   const srSupport    = srLevels.below.find(s => Math.abs(price/s - 1) <= 0.015);
