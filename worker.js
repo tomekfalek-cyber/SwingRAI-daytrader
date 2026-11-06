@@ -21,9 +21,17 @@ const FEE = 0.0009;
 const SLIPPAGE_PAPER = 0.0005;
 
 // FIX #3: Minimalny oczekiwany zysk netto (po kosztach) zanim otworzymy pozycje.
-const MIN_COST_COVERAGE_RATIO = 3.0;
+const MIN_COST_COVERAGE_RATIO = 2.5; // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
 
-const TIMEOUT_MS = 8 * 3600000; // 8h day trading
+const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
+const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
+const BREAKEVEN_R = 1.0;         // po +1R SL → entry + fee buffer
+const PARTIAL_R = 1.15;          // partial 50% przy ~1.15R (zamiast 65% TP)
+const MAX_SPREAD_PCT = 0.0015;   // 0.15% — powyzej: skip entry
+const DAILY_LOSS_LIMIT = 0.08;   // -8% equity dziennie → stop
+const COOLDOWN_SL_MS = 40 * 60000;      // 40 min po SL na pare
+const COOLDOWN_CONS3_MS = 90 * 60000;   // 90 min global po 3 stratach z rzedu
+const OB_FVG_MAX_AGE_BARS = 12;  // TTL Order Block / FVG na 15m (~3h)
 
 const CORR_GROUPS = [
   ['XBTUSDT'],
@@ -215,9 +223,9 @@ export default {
       cfg.sl    = parseFloat(p.sl   ?? 1)  / 100;
       cfg.trail = parseFloat(p.trail ?? 0.8)  / 100;
       cfg.minScore = parseInt(p.score ?? 56);
-      cfg.maxPos   = parseInt(p.maxp  ?? 4);
+      cfg.maxPos   = parseInt(p.maxp  ?? 3);
       cfg.posSize  = parseFloat(p.size ?? 15);
-      cfg.riskPct  = parseFloat(p.riskPct ?? 2);
+      cfg.riskPct  = parseFloat(p.riskPct ?? 1.25);
       cfg.fgMin    = parseInt(p.fgMin ?? 20);
       cfg.tgToken  = p.tg   || '';
       cfg.tgChat   = p.tgc  || '';
@@ -448,9 +456,9 @@ async function runBotCycle(env) {
 
   const drawdown = state.peakBalance > 0 ? (state.peakBalance - currentBalance) / state.peakBalance : 0;
   const drawdownBlocked = (state.drawdownBlock || 0) > Date.now();
-  if (drawdown > 0.15 && !drawdownBlocked) {
-    state.drawdownBlock = Date.now() + 6 * 3600000;
-    addLog(state, 'Circuit breaker: -15% drawdown â€” blokada BUY 6h', 'err');
+  if (drawdown > 0.10 && !drawdownBlocked) {
+    state.drawdownBlock = Date.now() + 4 * 3600000;
+    addLog(state, 'Circuit breaker: -10% drawdown â€” blokada BUY 4h', 'err');
   }
 
   const nb  = makeNB(state.nb);
@@ -464,6 +472,7 @@ async function runBotCycle(env) {
     const fg = await getFearGreed(state);
 
     const btcInfo = await btcDropGuard();
+    state.btcInfo = btcInfo;
     const btcDrop = btcInfo.drop;
     if (btcDrop) addLog(state, 'BTC Guard aktywny â€” brak nowych long na altcoinach', 'warn');
     if (btcInfo.pump) addLog(state, 'BTC Guard (pump) aktywny â€” brak nowych SHORT na altcoinach', 'warn');
@@ -493,10 +502,10 @@ async function runBotCycle(env) {
     }));
 
     const dailyBase = state.dailyStartBalance > 0 ? state.dailyStartBalance : (cfg.paperBalance || 1000);
-    const dailyLossOk = (state.dailyPnl || 0) > -0.05 * dailyBase;
+    const dailyLossOk = (state.dailyPnl || 0) > -DAILY_LOSS_LIMIT * dailyBase;
 
     const blockReason = fg.val < 15 ? 'F&G=' + fg.val + ' ekstremalna panika'
-      : !dailyLossOk ? 'dzienny limit strat -5%'
+      : !dailyLossOk ? 'dzienny limit strat -8%'
       : (state.drawdownBlock || 0) > Date.now() ? 'circuit breaker'
       : null;
 
@@ -648,22 +657,36 @@ function detectFVG(h, l, c) {
   return gaps.slice(-6);
 }
 
-function detectLiquiditySweep(h, l, c, lookback=20) {
+function detectLiquiditySweep(h, l, c, v, lookback=20) {
   const n = c.length;
   if (n < lookback + 3) return null;
   const recentLow  = Math.min(...l.slice(-lookback-3, -3));
   const recentHigh = Math.max(...h.slice(-lookback-3, -3));
   const lastLow    = l[n-1], lastHigh = h[n-1], lastClose = c[n-1];
-  if (lastLow < recentLow && lastClose > recentLow) {
+  // potwierdzenie wolumenem (unikamy falszywych stop-huntow)
+  let volOk = true;
+  if (v && v.length >= 20) {
+    const avg = v.slice(-20).reduce((a,b)=>a+b,0) / 20;
+    volOk = avg > 0 ? (v[n-1] / avg) >= 1.15 : true;
+  }
+  if (lastLow < recentLow && lastClose > recentLow && volOk) {
     return { type:'bullish', sweptLevel: recentLow };
   }
-  if (lastHigh > recentHigh && lastClose < recentHigh) {
+  if (lastHigh > recentHigh && lastClose < recentHigh && volOk) {
     return { type:'bearish', sweptLevel: recentHigh };
   }
   return null;
 }
 
+function filterFreshSMC(blocks, maxAge) {
+  // idx rosnie z czasem; bierzemy tylko ostatnie maxAge barow od konca serii
+  if (!blocks || !blocks.length) return [];
+  const maxIdx = Math.max(...blocks.map(b => b.idx || 0));
+  return blocks.filter(b => (maxIdx - (b.idx || 0)) <= maxAge);
+}
+
 function detectStructure(h, l, c, lookback=30) {
+
   const n = c.length;
   if (n < lookback) return { trend:'range', event:null };
   const highs=[], lows=[];
@@ -943,7 +966,7 @@ async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adapti
   const structure   = detectStructure(d.h, d.l, d.c);
   const orderBlocks = detectOrderBlocks(h1.o, h1.h, h1.l, h1.c, atr(h1.h, h1.l, h1.c, 14));
   const fvgs        = detectFVG(h1.h, h1.l, h1.c);
-  const liqSweep    = detectLiquiditySweep(h1.h, h1.l, h1.c);
+  const liqSweep    = detectLiquiditySweep(h1.h, h1.l, h1.c, h1.v);
   const premDisc    = premiumDiscountZone(d.h, d.l, d.c);
 
   if (structure.event === 'BOS_up')        { score += 15; why.push('SMC: Break of Structure (bull)'); }
@@ -1097,28 +1120,27 @@ if (nb.trained && gbm.trained) {
 
   // STRATEGIA DLA LONG (TRENDOWANIE W GĂ“RÄ) + SHORT W KOREKCIE TRENDU BYCZEGO
 if (trendD >= 1) {
-  // W silnym trendzie byczym, wymagaj Mniej konfluencji dla LONG
+  // Daytrading: w bull_trend / strong_bull wystarczy 1 kluczowy warunek + trigger 5m (staged)
+  // W sideways/neutral — 2 warunki (jak wczesniej)
   let longConfluence;
-  if (marketRegime === 'strong_bull') {
-    // W silnym trendzie byczym wystarczy 1 z 2 kluczowych warunkĂłw SMC
-    longConfluence = [divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up'].filter(Boolean).length;
+  if (marketRegime === 'strong_bull' || regime === 'bull_trend') {
+    longConfluence = [divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
+                      rsiD <= 48, nearBullOB || (liqSweep && liqSweep.type === 'bullish')].filter(Boolean).length;
   } else {
-    // W umiarkowanym trendzie wymagaj 2 z 4 warunkĂłw
     longConfluence = [rsiD <= 45, bbD.pos < 0.30, divD.bull, volR > 1.2].filter(Boolean).length;
   }
 
+  const longNeed = (marketRegime === 'strong_bull' || regime === 'bull_trend') ? 1 : 2;
   const longThreshold = marketRegime === 'strong_bull' ? minScore * 0.92 / 100 : minScore / 100;
-  scoreBuy = finalProb >= longThreshold && longConfluence >= (marketRegime === 'strong_bull' ? 1 : 2) && !bearBias;
+  scoreBuy = finalProb >= longThreshold && longConfluence >= longNeed && !bearBias;
 
-  // STRATEGIA DLA SHORT (TYLKO W KOREKTACH TRENDU) - niezaleznie od wyniku LONG powyzej
+  // SHORT w korekcie bull — tylko gdy wykupienie + brak bullBias
   if (rsiD > 60 && bbD.pos > 0.75 && !bullBias && marketRegime !== 'strong_bull') {
     const shortConfluence = [divD.bear, volR > 1.3, structure.event === 'CHoCH_down'].filter(Boolean).length;
     const shortThresholdInBull = marketRegime === 'strong_bull' ? (100 - minScore * 0.92) / 100 : (100 - minScore) / 100;
     scoreShort = finalProb <= shortThresholdInBull && shortConfluence >= 2 && !bullBias;
   }
-}
-// STRATEGIA DLA SHORT (TRENDOWANIE W DĂ“Ĺ)
-else if (trendD <= -1) {
+} else if (trendD <= -1) {
   const shortConfluence = [rsiD >= 55, bbD.pos > 0.70, divD.bear, volR > 1.2].filter(Boolean).length;
   const shortThreshold = marketRegime === 'strong_bear' ? ((100 - minScore) * 0.92) / 100 : (100 - minScore) / 100;
   scoreShort = finalProb <= shortThreshold && shortConfluence >= (marketRegime === 'strong_bear' ? 1 : 2) && !bullBias;
@@ -1126,9 +1148,9 @@ else if (trendD <= -1) {
 
   // Dodatkowy "twardy" filtr wejscia: KONTEKST(1H) -> SETUP(15m pullback/odbicie)
   // -> TRIGGER(5m swieca zapalajaca). Score+SMC powyzej wybiera KANDYDATA, ale
-  // to ten filtr decyduje o TIMINGU - odcina sygnaly, gdzie kontekst/pullback/
-  // swieca nie sa jednoczesnie spelnione, nawet przy wysokim score.
-  const ctxLong     = buildContextGate(trendD, 'LONG');
+  // staged* musi przejsc zeby buy/shortSignal = true.
+
+const ctxLong     = buildContextGate(trendD, 'LONG');
   const setupLong   = ctxLong.pass   ? buildSetupGate(h4, 'LONG')   : { pass:false, reason:null };
   const triggerLong = (ctxLong.pass && setupLong.pass) ? buildTriggerGate(h1, 'LONG') : { pass:false, reason:null };
   const stagedLong  = ctxLong.pass && setupLong.pass && triggerLong.pass;
@@ -1144,7 +1166,13 @@ else if (trendD <= -1) {
     why.push((!ctxShort.pass ? ctxShort.reason : !setupShort.pass ? setupShort.reason : triggerShort.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: odrzucone');
   }
 
-  const buy         = scoreBuy && stagedLong;
+  // Sideways: long tylko w discount (twardszy gate)
+  let buy = scoreBuy && stagedLong;
+  if (buy && regime === 'sideways' && premDisc.zone !== 'discount') {
+    buy = false;
+    why.push('Sideways: brak discount — long odrzucony');
+  }
+
   const shortSignal = scoreShort && stagedShort;
   const shortLevels = shortSignal ? {
     tp: price * (1 - Math.max(cfg.tp, atrD/price*1.8)),
@@ -1205,18 +1233,35 @@ async function checkPositions(cfg, state, env, ql) {
 
         const pnlPct = (pos.entry - price) / pos.entry * 100;
         const ageMs  = Date.now() - pos.entryTs;
+        const riskPct = pos.entry > 0 && (pos.initialSl || pos.sl) > 0
+          ? Math.abs((pos.initialSl || pos.sl) - pos.entry) / pos.entry * 100 : cfg.sl * 100;
+        const rMultiple = riskPct > 0 ? pnlPct / riskPct : 0;
+
+        if (!pos.breakeven && rMultiple >= BREAKEVEN_R && pnlPct > 0) {
+          const beSl = pos.entry * (1 - FEE * 2);
+          if (beSl < pos.sl) {
+            pos.sl = beSl;
+            pos.breakeven = true;
+            addLog(state, 'BREAKEVEN SHORT ' + pos.sym + ' @ ' + pnlPct.toFixed(2) + '%', 'ok');
+          }
+        }
+
         const nearTimeout  = ageMs > TIMEOUT_MS * 0.75;
-        const effTrailDist = (nearTimeout && pnlPct > 0) ? pos.trailDist * 0.5 : pos.trailDist;
+        const ageTighten = ageMs > 2 * 3600000;
+        let trailMult = 1.0;
+        if (nearTimeout && pnlPct > 0) trailMult = 0.5;
+        else if (ageTighten && pnlPct > 0) trailMult = 0.7;
+        const effTrailDist = pos.trailDist * trailMult;
         const trail = pos.lowP * (1 + effTrailDist);
         let reason = null;
 
-        if (ageMs > TIMEOUT_MS)                                    reason = 'TIMEOUT 8h';
+        if (ageMs > TIME_STOP_MS && rMultiple < 0.3 && !pos.partialClosed) reason = 'TIME STOP';
+        else if (ageMs > TIMEOUT_MS)                                    reason = 'TIMEOUT 8h';
         else if (price <= (pos.tp > 0 ? pos.tp : pos.entry * (1 - cfg.tp))) reason = 'TAKE PROFIT';
-        else if (price >= (pos.partialClosed ? pos.sl : (pos.sl > 0 ? pos.sl : pos.entry * (1 + cfg.sl)))) reason = 'STOP LOSS';
-        else if (price >= trail && pnlPct > 1.5)                   reason = 'TRAILING STOP';
+        else if (price >= (pos.sl > 0 ? pos.sl : pos.entry * (1 + cfg.sl))) reason = 'STOP LOSS';
+        else if (price >= trail && (pnlPct > 1.0 || pos.breakeven))     reason = 'TRAILING STOP';
 
-        const _tpPct = pos.tp > 0 ? (pos.entry - pos.tp) / pos.entry * 100 : cfg.tp * 100;
-        if (!reason && pnlPct >= _tpPct * 0.65 && !pos.partialClosed && !pos.partialSelling) {
+        if (!reason && rMultiple >= PARTIAL_R && !pos.partialClosed && !pos.partialSelling) {
           pos.partialSellingAt = Date.now();
           pos.partialSelling = true;
           try {
@@ -1255,18 +1300,40 @@ async function checkPositions(cfg, state, env, ql) {
 
       const pnlPct = (price - pos.entry) / pos.entry * 100;
       const ageMs  = Date.now() - pos.entryTs;
-      const nearTimeout   = ageMs > TIMEOUT_MS * 0.75;
-      const effTrailDist  = (nearTimeout && pnlPct > 0) ? pos.trailDist * 0.5 : pos.trailDist;
+      const riskPct = pos.entry > 0 && pos.sl > 0 ? Math.abs(pos.entry - pos.initialSl) / pos.entry * 100
+                    : (pos.entry > 0 && pos.sl > 0 ? Math.abs(pos.entry - pos.sl) / pos.entry * 100 : cfg.sl * 100);
+      const rMultiple = riskPct > 0 ? pnlPct / riskPct : 0;
+
+      // Breakeven po +1R (SL → entry + fee buffer) — zanim partial
+      if (!pos.breakeven && rMultiple >= BREAKEVEN_R && pnlPct > 0) {
+        const beSl = pos.entry * (1 + FEE * 2);
+        if (beSl > pos.sl) {
+          pos.sl = beSl;
+          pos.breakeven = true;
+          addLog(state, 'BREAKEVEN ' + pos.sym + ' SL→entry @ ' + pnlPct.toFixed(2) + '% (~' + rMultiple.toFixed(1) + 'R)', 'ok');
+        }
+      }
+
+      // Trail: zacieśniaj po 2h lub near timeout; mocniej gdy juz partial/BE
+      const ageTighten = ageMs > 2 * 3600000;
+      const nearTimeout = ageMs > TIMEOUT_MS * 0.75;
+      let trailMult = 1.0;
+      if (nearTimeout && pnlPct > 0) trailMult = 0.5;
+      else if (ageTighten && pnlPct > 0) trailMult = 0.7;
+      else if (pos.partialClosed || pos.breakeven) trailMult = 0.75;
+      const effTrailDist = pos.trailDist * trailMult;
       const trail  = pos.highP * (1 - effTrailDist);
       let reason = null;
 
-      if (ageMs > TIMEOUT_MS)                                reason = 'TIMEOUT 8h';
+      // Time-stop: po TIME_STOP_MS jesli < 0.3R progress → wyjscie (martwy setup)
+      if (ageMs > TIME_STOP_MS && rMultiple < 0.3 && !pos.partialClosed) reason = 'TIME STOP';
+      else if (ageMs > TIMEOUT_MS)                                reason = 'TIMEOUT 8h';
       else if (price >= (pos.tp > 0 ? pos.tp : pos.entry * (1 + cfg.tp))) reason = 'TAKE PROFIT';
-      else if (price <= (pos.partialClosed ? pos.sl : (pos.sl > 0 ? pos.sl : pos.entry * (1 - cfg.sl)))) reason = 'STOP LOSS';
-      else if (price <= trail && pnlPct > 1.5)               reason = 'TRAILING STOP';
+      else if (price <= (pos.sl > 0 ? pos.sl : pos.entry * (1 - cfg.sl))) reason = 'STOP LOSS';
+      else if (price <= trail && (pnlPct > 1.0 || pos.breakeven || pos.partialClosed)) reason = 'TRAILING STOP';
 
-      const _tpPct = pos.tp > 0 ? (pos.tp - pos.entry) / pos.entry * 100 : cfg.tp * 100;
-      if (!reason && pnlPct >= _tpPct * 0.65 && !pos.partialClosed && !pos.partialSelling) {
+      // Partial 50% przy ~1.15R (nie 65% TP)
+      if (!reason && rMultiple >= PARTIAL_R && !pos.partialClosed && !pos.partialSelling) {
         pos.partialSellingAt = Date.now();
         pos.partialSelling = true;
         const halfQtyReq = pos.qty / 2;
@@ -1333,10 +1400,19 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   if (isDeadHour()) { addLog(state, 'Dead hour (02-05 UTC): ' + sig.sym + ' â€” pomijam', 'warn'); return; }
 
   if (btcDrop && sig.sym !== 'XBTUSDT') {
-    addLog(state, 'BTC Guard: pomijam ' + sig.sym, 'warn'); return;
+    addLog(state, 'BTC Guard 24h: pomijam ' + sig.sym, 'warn'); return;
+  }
+  // BTC 1H bear gate dla alt-longow
+  const bi = state.btcInfo || {};
+  if (bi.bear1h && sig.sym !== 'XBTUSDT') {
+    addLog(state, 'BTC 1H ' + (bi.change1h || 0).toFixed(2) + '%: pomijam alt LONG ' + sig.sym, 'warn'); return;
   }
 
   if (corrBlocked(sig.sym, state)) return;
+
+  if (sig.spreadPct != null && sig.spreadPct > MAX_SPREAD_PCT) {
+    addLog(state, 'Spread ' + (sig.spreadPct * 100).toFixed(3) + '% > max: pomijam ' + sig.sym, 'warn'); return;
+  }
 
   let adjSig = sig;
   if (fg.val < cfg.fgMin) {
@@ -1363,8 +1439,8 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
       return s + (p.size||0) * slPct;
     }, 0);
     const portfolioHeat = totalRisk / (total > 0 ? total : 1);
-    if (portfolioHeat > 0.08) {
-      addLog(state, 'Portfolio heat >8% â€” blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
+    if (portfolioHeat > 0.06) {
+      addLog(state, 'Portfolio heat >6% â€” blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
       return;
     }
   }
@@ -1383,6 +1459,17 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   }
 
   let posSize = kellySize(cfg, state, total, slPct);
+
+  // Session size mult (nizsza plynnosc = mniejszy size)
+  posSize = Math.max(5, Math.round(posSize * sessionSizeMultiplier() * 100) / 100);
+
+  // F&G extreme fear → -40% size (nie tylko score)
+  if (fg.val < 20) {
+    posSize = Math.max(5, Math.round(posSize * 0.6 * 100) / 100);
+    addLog(state, 'F&G=' + fg.val + ' extreme fear — size x0.6', 'warn');
+  } else if (fg.val < cfg.fgMin) {
+    posSize = Math.max(5, Math.round(posSize * 0.75 * 100) / 100);
+  }
 
   const st = state.stats;
   if (st && (state.trades || []).length >= 15 && (st.sharpe < 0 || st.maxDD > 20)) {
@@ -1575,11 +1662,12 @@ function buildPosition(sig, price, qty, levels, size, ql, side) {
   return {
     sym: sig.sym, side, entry: price, qty,
     cp: price, highP: price, lowP: price,
-    sl: levels.sl, tp: levels.tp, trailDist: levels.trail,
+    sl: levels.sl, initialSl: levels.sl, tp: levels.tp, trailDist: levels.trail,
     entryTs: Date.now(), score: sig.score, finalProb: sig.finalProb,
     aiMethod: sig.aiMethod, nbFeatures: sig.nbFeatures, gbmFeatures: sig.gbmFeatures,
     qlSig: sig.qlSig, gbmProb: sig.gbmProb, nbLabel: sig.nbPred ? sig.nbPred.label : 'NEUTRAL',
-    why: sig.why.join(', '), size, rr: levels.rr
+    why: sig.why.join(', '), size, rr: levels.rr,
+    breakeven: false, partialClosed: false
   };
 }
 
@@ -1624,9 +1712,9 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
   if (pnl < 0) {
     state.consLoss = (state.consLoss || 0) + 1;
     if (!state.cooldown || typeof state.cooldown !== 'object') state.cooldown = {};
-    state.cooldown[pos.sym] = Date.now() + 60 * 60000;
+    state.cooldown[pos.sym] = Date.now() + COOLDOWN_SL_MS;
     if (state.consLoss >= 3) {
-      state.globalBlockUntil = Date.now() + 90 * 60000;
+      state.globalBlockUntil = Date.now() + COOLDOWN_CONS3_MS;
       addLog(state, '3 straty z rzedu â€” blokada 90 min', 'err');
     }
   } else {
@@ -1893,7 +1981,17 @@ function isVolumeAnomaly(sig, effMinScore) {
 
 function isDeadHour() {
   const h = new Date().getUTCHours();
+  // 02-05 UTC niska plynnosc crypto + unikanie cienkich bookow
   return h >= 2 && h < 5;
+}
+
+// Preferowane okno plynnosci (EU/US overlap) — nie hard-block, tylko size mult
+function sessionSizeMultiplier() {
+  const h = new Date().getUTCHours();
+  if (h >= 12 && h < 20) return 1.0;   // EU/US overlap
+  if (h >= 7 && h < 12) return 0.85;   // EU open
+  if (h >= 20 || h < 2) return 0.75;   // Azja / noc
+  return 0.7;                          // dead-ish
 }
 
 async function btcDropGuard() {
@@ -1901,10 +1999,26 @@ async function btcDropGuard() {
     const r = await fetchWithTimeout(`${BYBIT_BASE}/v5/market/tickers?category=spot&symbol=BTCUSDT`);
     const d = await r.json();
     const t = (d.result && d.result.list && d.result.list[0]) || null;
-    if (!t) return { drop: false, pump: false, change24h: 0 };
+    if (!t) return { drop: false, pump: false, change24h: 0, change1h: 0, bear1h: false };
     const pct = +(t.price24hPcnt || 0) * 100;
-    return { drop: pct < -4, pump: pct > 4, change24h: pct };
-  } catch(e) { return { drop: false, pump: false, change24h: 0 }; }
+    // 1H change z kline BTC (szybki kontekst daytrading)
+    let change1h = 0;
+    try {
+      const k = await getKlines('XBTUSDT', '60', 3);
+      if (k && k.length >= 2) {
+        const c0 = +k[k.length - 2][4];
+        const c1 = +k[k.length - 1][4];
+        if (c0 > 0) change1h = (c1 / c0 - 1) * 100;
+      }
+    } catch (_) {}
+    return {
+      drop: pct < -4,
+      pump: pct > 4,
+      change24h: pct,
+      change1h,
+      bear1h: change1h <= -2.0 // hard gate alt-long gdy BTC -2%/1H
+    };
+  } catch(e) { return { drop: false, pump: false, change24h: 0, change1h: 0, bear1h: false }; }
 }
 
 function corrBlocked(sym, state) {
@@ -2723,8 +2837,8 @@ function defaultConfig() {
   return {
     active: false, mode: 'paper',
     tp: 0.02, sl: 0.01, trail: 0.008,
-    maxPos: 4, posSize: 15, riskPct: 2,
-    paperBalance: 1000, minScore: 62, fgMin: 20,
+    maxPos: 3, posSize: 12, riskPct: 1.25, // daytrading: mniej pozycji, mniejsze ryzyko
+    paperBalance: 1000, minScore: 56, fgMin: 20,
     revxApiKey: '', revxPrivKey: '',
     tgToken: '', tgChat: ''
   };
@@ -2739,7 +2853,7 @@ function defaultState() {
     lastCycle: null, lastFG: { val: 50, label: 'Neutral', ts: 0 },
     lastSigs: [],
     nb: null, gbm: null, ql: null, ensembleW: null,
-    pairParams: {}, adaptiveMinScore: 62,
+    pairParams: {}, adaptiveMinScore: 56,
     peakBalance: 0, peakBalanceMode: 'paper',
     drawdownBlock: 0, stats: null,
     lastGbmRefit: 0,
