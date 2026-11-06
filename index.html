@@ -469,7 +469,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
 <!-- LEFT: Sygnały -->
 <div id="sb-left">
   <div class="sec" style="padding:7px 11px;">
-    <div class="sec-t">📡 Sygnały Swing AI
+    <div class="sec-t">📡 Sygnały DayTrader
       <span id="scan-spin" style="display:none;color:var(--gold);animation:pulse .5s infinite">⟳</span>
     </div>
     <div style="font-size:7.5pt;color:var(--text3)">Skan: <span id="last-scan">--</span> | Para: <span id="scan-progress" style="color:var(--gold)">--</span></div>
@@ -650,7 +650,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           </div>
           <div class="r2" style="margin-bottom:6px"><span class="lbl">Okres</span>
             <select id="bt-days" style="width:110px">
-              <option value="7">7 dni</option>
+              <option value="7">7h (day)</option>
               <option value="14" selected>14 dni</option>
               <option value="30">30 dni</option>
             </select>
@@ -659,7 +659,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           <div class="r2" style="margin-bottom:6px"><span class="lbl">Wielkość pozycji %</span><input id="bt-size" type="number" value="10" min="1" max="50" style="width:80px"></div>
           <div class="r2" style="margin-bottom:6px"><span class="lbl">Min Score BUY</span><input id="bt-score" type="number" value="55" min="40" max="90" style="width:80px"> <small class="lbl">(max~88)</small></div>
           <div class="r2" style="margin-bottom:10px"><span class="lbl">TP% / SL%</span>
-            <span><input id="bt-tp" type="number" value="8" style="width:48px"> / <input id="bt-sl" type="number" value="4" style="width:48px"></span>
+            <span><input id="bt-tp" type="number" value="2" style="width:48px"> / <input id="bt-sl" type="number" value="1" style="width:48px"></span>
           </div>
           <button class="go" onclick="runBacktest()" id="bt-btn" style="width:100%;padding:7px">▶ Uruchom backtest</button>
           <div id="bt-progress" style="margin-top:8px;font-size:8.5pt;color:var(--gold);min-height:18px"></div>
@@ -702,7 +702,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
           </div>
           <div class="r2" style="margin-bottom:6px"><span class="lbl">Dni danych</span>
             <select id="ml-days" style="width:110px">
-              <option value="7">7 dni</option>
+              <option value="7">7h (day)</option>
               <option value="14" selected>14 dni</option>
               <option value="30">30 dni</option>
             </select>
@@ -815,7 +815,7 @@ tr:hover td{background:rgba(123,97,255,.04);}
 <!-- SETTINGS MODAL -->
 <div class="overlay" id="modal-cfg">
 <div class="modal">
-  <h2><span style="background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent">&#9881; Konfiguracja SwingAI Revolut X</span></h2>
+  <h2><span style="background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent">&#9881; Konfiguracja SwingAI DayTrader</span></h2>
   <div class="alert-box">&#128272; Klucze API przechowywane tylko w <b>localStorage</b> — nie wychodzą poza Cloudflare Worker.<br>&#9888; Bot handluje <b>WYŁĄCZNIE kryptowalutami</b> (BTC/ETH/SOL…) — akcje, ETF, surowce są chronione.</div>
   <div style="background:rgba(123,97,255,.06);border:1px solid rgba(123,97,255,.25);border-radius:6px;padding:10px 12px;margin-bottom:10px;"><div style="font-size:8pt;color:var(--accent);margin-bottom:7px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">&#9881; Cloudflare Worker</div><div class="form-row"><label>Worker URL</label><input id="cfg-worker" type="text" placeholder="https://swingai-revolut.xxx.workers.dev"></div><div class="form-row"><label>Auth Token</label><input id="cfg-auth-token" type="text" placeholder="wklej tutaj swoj AUTH_SECRET"></div></div>
   <div style="background:rgba(123,97,255,.08);border:2px solid rgba(123,97,255,.35);border-radius:6px;padding:10px 12px;margin-bottom:10px;"><div style="font-size:8pt;color:var(--accent);margin-bottom:7px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">&#11044; Revolut X — Ed25519</div><div class="form-row"><label>API Key</label><input id="cfg-revx-key" type="password" placeholder="Revolut X API Key"></div><div style="margin-bottom:8px"><div style="font-size:7.5pt;color:var(--text2);margin-bottom:4px">Private Key PEM — generuj: <code style="background:var(--bg4);padding:1px 5px;border-radius:3px">openssl genpkey -algorithm ed25519</code></div><textarea id="cfg-revx-priv" rows="4" placeholder="-----BEGIN PRIVATE KEY-----" style="width:100%;box-sizing:border-box;background:var(--bg4);color:var(--text);border:1px solid var(--border2);border-radius:5px;padding:6px 8px;font-size:7.5pt;font-family:'JetBrains Mono',monospace;resize:vertical;outline:none;"></textarea></div><div style="font-size:7.5pt;color:var(--text3);line-height:1.5">Public key wgraj w: Revolut X → Settings → API Keys (uprawnienia: Crypto Spot READ + TRADE)</div></div>
@@ -1528,7 +1528,7 @@ async function analyzeSwing(sym) {
   const rsiD  = rsi(d.c,14), macdD=macd(d.c), bbD=bband(d.c);
   const ema20 = ema(d.c,20),  ema50=ema(d.c,50);
   const atrD  = atr(d.h,d.l,d.c,14);
-  // VWAP 4H
+  // VWAP 15m (intraday)
   const vwap4h = calcVWAP(h4.h, h4.l, h4.c, h4.v);
   // S/R levels
   const srLevels = calcSRLevels(d.h, d.l, price);
@@ -1551,45 +1551,46 @@ async function analyzeSwing(sym) {
   const mom10  = d.c.length>10 ? (price/d.c.at(-11)-1)*100 : 0;
 
   let score=0; const why=[];
-  if      (rsiD<=25) { score+=30; why.push('RSI-D='+rsiD.toFixed(0)+' (extreme oversold)'); }
-  else if (rsiD<=32) { score+=24; why.push('RSI-D oversold ('+rsiD.toFixed(0)+')'); }
-  else if (rsiD<=40) { score+=16; why.push('RSI-D low ('+rsiD.toFixed(0)+')'); }
-  else if (rsiD<=48) { score+=8;  why.push('RSI-D poniżej 50'); }
-  else if (rsiD>=70) { score-=15; why.push('RSI-D wykupiony'); }
-  if      (rsi4h<=30) { score+=15; why.push('RSI-4H oversold'); }
-  else if (rsi4h<=40) { score+=10; why.push('RSI-4H low'); }
-  else if (rsi4h<=50) { score+=5; }
-  else if (rsi4h>=70) { score-=10; why.push('RSI-4H wykupiony'); }
+  // Scoring daytrading: 1H kontekst, 15m setup (zsynchronizowane z worker.js)
+  if      (rsiD<=28) { score+=22; why.push('RSI-1H='+rsiD.toFixed(0)+' (extreme OS)'); }
+  else if (rsiD<=35) { score+=16; why.push('RSI-1H oversold ('+rsiD.toFixed(0)+')'); }
+  else if (rsiD<=42) { score+=10; why.push('RSI-1H low ('+rsiD.toFixed(0)+')'); }
+  else if (rsiD<=50) { score+=4; }
+  else if (rsiD>=68) { score-=12; why.push('RSI-1H wykupiony'); }
+  if      (rsi4h<=32) { score+=12; why.push('RSI-15m oversold'); }
+  else if (rsi4h<=42) { score+=8;  why.push('RSI-15m low'); }
+  else if (rsi4h<=52) { score+=3; }
+  else if (rsi4h>=68) { score-=8;  why.push('RSI-15m wykupiony'); }
   if      (macdD.hist>0 && macdD.line<0) { score+=20; why.push('MACD cross up 1H'); }
-  else if (macdD.hist>0)                  { score+=12; why.push('MACD histogram+ 1H'); }
+  else if (macdD.hist>0)                  { score+=12; why.push('MACD hist+ 1H'); }
   else if (macdD.hist > -atrD*.005)       { score+=4; }
   else                                    { score-=5; }
   if      (bbD.pos<0.08) { score+=18; why.push('Cena przy dolnej BB'); }
   else if (bbD.pos<0.20) { score+=13; why.push('BB dolna strefa'); }
   else if (bbD.pos<0.35) { score+=6; }
-  else if (bbD.pos>0.85) { score-=10; why.push('BB górna — ryzyko'); }
-  if      (trendD===2)  { score+=12; why.push('Ponad EMA20+50 — bull'); }
-  else if (trendD===1)  { score+=8;  why.push('Ponad EMA50'); }
-  else if (trendD===0)  { score+=3; }
-  else                  { score-=20; why.push('Poniżej EMA50 — bessa'); }
-  if      (mom5>0 && mom10<0)    { score+=8; why.push('Momentum odwrócenie'); }
+  else if (bbD.pos>0.85) { score-=10; why.push('BB gorna — ryzyko'); }
+  if      (trendD===2)  { score+=12; why.push('1H: ponad EMA20+50 — bull'); }
+  else if (trendD===1)  { score+=8;  why.push('1H: ponad EMA50'); }
+  else if (trendD===0)  { score+=2; }
+  else                  { score-=10; why.push('1H: ponizej EMA50'); }
+  if      (mom5>0 && mom10<0)    { score+=8; why.push('Momentum odwrocenie'); }
   else if (mom5<-5 && mom10<-10) { score+=5; why.push('Oversold momentum'); }
   else if (mom5>8)               { score-=5; why.push('Zbyt szybki wzrost'); }
   if (volR>1.8||vol4R>2.0) { score+=5; why.push('Vol spike x'+Math.max(volR,vol4R).toFixed(1)); }
-  else if (volR<0.4)       { score-=8; why.push('Bardzo niski wolumen'); }
-  if (macd4h.hist>0 && macdD.hist>0) { score+=5; why.push('MACD 4H+D zgodnosc'); }
-  if (confirm1h)  { score+=5; why.push('1H potwierdza'); }
+  else if (volR<0.4)       { score-=8; why.push('Niski wolumen'); }
+  if (macd4h.hist>0 && macdD.hist>0) { score+=5; why.push('MACD 1H+15m zgodnosc'); }
+    if (confirm1h)  { score+=5; why.push('5m potwierdza momentum'); }
   else            { score-=3; }
   // Dywergencja RSI — jeden z najsilniejszych sygnałów odwrócenia
   if (divD.bull && div4h.bull) {
-    score += 20; why.push('RSI dywergencja bycza D+4H');
+    score += 18; why.push('RSI dywergencja bycza 1H+15m');
   } else if (divD.bull) {
-    score += 14; why.push('RSI dywergencja bycza 1H');
+    score += 12; why.push('RSI dywergencja bycza 1H');
   } else if (div4h.bull) {
-    score += 8;  why.push('RSI dywergencja bycza 4H');
+    score += 7;  why.push('RSI dywergencja bycza 15m');
   }
-  if (divD.bear)  { score -= 12; why.push('RSI dywergencja niedzwiedzia 1H'); }
-  if (div4h.bear) { score -= 7;  why.push('RSI dywergencja niedzwiedzia 4H'); }
+  if (divD.bear)  { score -= 10; why.push('RSI dywergen. niedzwiedzia 1H'); }
+  if (div4h.bear) { score -= 6;  why.push('RSI dywergen. niedzwiedzia 15m'); }
   const bearBias = trendD===-1 && rsiD>50;
   if (bearBias) { score-=30; why.push('BESSA: long wymaga silnego potwierdzenia'); }
   // bullBias - symetryczny twardy blok dla SHORT w silnym trendzie wzrostowym
@@ -1624,8 +1625,8 @@ async function analyzeSwing(sym) {
   else                                { score -= 4; why.push('SMC: Strefa premium (' + (premDisc.pct*100).toFixed(0) + '%) - mniej atrakcyjne dla longa'); }
 
   // VWAP scoring
-  if (price > vwap4h) { score += 8;  why.push('Ponad VWAP'); }
-  else                { score -= 5;  why.push('Ponizej VWAP'); }
+  if (price > vwap4h) { score += 8;  why.push('Ponad VWAP 15m'); }
+  else                { score -= 5;  why.push('Ponizej VWAP 15m'); }
 
   // S/R scoring
   const srSupport    = srLevels.below.find(function(s){ return Math.abs(price/s - 1) <= 0.015; });
@@ -2390,32 +2391,44 @@ async function checkPositions() {
       }
       if (cp > (pos.highP||pos.entry)) pos.highP = cp;
       const pnlPct = (cp-pos.entry)/pos.entry*100;
-      // Dynamiczny trailing — z ATR pozycji lub fallback na CFG
+      const ageMs  = Date.now()-pos.entryTs;
+      const riskPct = pos.entry > 0 && (pos.initialSl || pos.sl)
+        ? Math.abs(pos.entry - (pos.initialSl || pos.sl)) / pos.entry * 100
+        : (CFG.sl * 100);
+      const rMultiple = riskPct > 0 ? pnlPct / riskPct : 0;
+      // Breakeven po +1R
+      if (!pos.breakeven && rMultiple >= 1.0 && pnlPct > 0) {
+        const beSl = pos.entry * (1 + FEE * 2);
+        if (beSl > (pos.sl || 0)) { pos.sl = beSl; pos.breakeven = true; log('BREAKEVEN '+pos.sym+' @ '+pnlPct.toFixed(2)+'%','ok'); }
+      }
+      // Trail: zacieśniaj po 2h / near 8h / po BE
       const trailDist = pos.trailDist || CFG.trail;
-      const trail     = Math.max(pos.entry, pos.highP*(1-trailDist));
+      let trailMult = 1.0;
+      if (ageMs > 8*3600000*0.75 && pnlPct > 0) trailMult = 0.5;
+      else if (ageMs > 2*3600000 && pnlPct > 0) trailMult = 0.7;
+      else if (pos.partialClosed || pos.breakeven) trailMult = 0.75;
+      const trail = pos.highP * (1 - trailDist * trailMult);
       let reason = null;
-      if      (cp <= pos.sl)                        reason = 'STOP LOSS';
+      if (ageMs > 105*60000 && rMultiple < 0.3 && !pos.partialClosed) reason = 'TIME STOP';
+      else if (cp <= pos.sl)                        reason = 'STOP LOSS';
       else if (cp >= pos.tp)                        reason = 'TAKE PROFIT';
-      else if (cp <= trail && pnlPct > 1.5)         reason = 'TRAILING STOP';
-      else if (pnlPct <= -12)                          reason = 'EMERGENCY STOP';
-      else if ((Date.now()-pos.entryTs) > 8*3600000)   reason = 'TIMEOUT 8h';
+      else if (cp <= trail && (pnlPct > 1.0 || pos.breakeven || pos.partialClosed)) reason = 'TRAILING STOP';
+      else if (pnlPct <= -12)                       reason = 'EMERGENCY STOP';
+      else if (ageMs > 8*3600000)                   reason = 'TIMEOUT 8h';
 
-      // Partial TP (50% pozycji przy polowie TP)
+      // Partial 50% przy ~1.15R (daytrading, nie 50% drogi do TP)
       if (!reason) {
-        const tpPct = (pos.tp - pos.entry) / pos.entry * 100;
-        if (pnlPct >= tpPct * 0.5 && !pos.partialClosed) {
+        if (rMultiple >= 1.15 && !pos.partialClosed) {
           const halfQty  = pos.qty / 2;
           const halfSize = (pos.size || 0) / 2;
           const grossPnl = (cp - pos.entry) * halfQty;
-          // Realny koszt round-trip (kupno+sprzedaz) na zamykanej polowie - ta sama
-          // formula co w closeTrade() - bez tego partial TP zawyzal statystyki
-          // (win rate/avg P/L) i dane treningowe AI o brakujaca oplate.
           const feeCost  = halfSize*FEE + (halfSize+grossPnl)*FEE;
           const halfPnl  = grossPnl - feeCost;
           pos.qty  = halfQty;
-          pos.size = halfSize; // zaktualizuj size do pozostałej połowy
+          pos.size = halfSize;
           pos.partialClosed = true;
-          pos.sl = pos.entry; // break-even stop
+          pos.sl = pos.entry * (1 + FEE * 2); // BE po partial
+          pos.breakeven = true;
           // Zwróć połowę zainwestowanego kapitału + zysk z tej połowy do salda paper
           if (CFG.mode === 'paper') {
             ST.paperBal = (ST.paperBal || 0) + halfSize + halfPnl;
@@ -2460,7 +2473,7 @@ function openShortPaper(sig) {
   if (corrBlocked(sig.sym)) return;
   if (!sig.shortLevels) return;
   const newShortPos = {
-    sym: sig.sym, entry: sig.price, sl: sig.shortLevels.sl, tp: sig.shortLevels.tp,
+    sym: sig.sym, entry: sig.price, sl: sig.shortLevels.sl, initialSl: sig.shortLevels.sl, tp: sig.shortLevels.tp, breakeven:false, partialClosed:false,
     trailDist: sig.shortLevels.trail || CFG.trail,
     lowP: sig.price, entryTs: Date.now(), score: sig.score, finalProb: sig.finalProb,
     why: sig.why.join(', '), size: CFG.posSize
@@ -2502,28 +2515,38 @@ async function checkShortPositions() {
       }
       if (cp < (pos.lowP||pos.entry)) pos.lowP = cp;
       const pnlPct = (pos.entry-cp)/pos.entry*100;
-      // Trailing stop odwrocony wzgledem LONG (od lowP, cena musi WZROSNAC do
-      // trail zeby wybic stop) - ta sama logika co SHORT branch w worker.js.
+      const ageMs  = Date.now()-pos.entryTs;
+      const riskPct = pos.entry > 0 && (pos.initialSl || pos.sl)
+        ? Math.abs((pos.initialSl || pos.sl) - pos.entry) / pos.entry * 100
+        : (CFG.sl * 100);
+      const rMultiple = riskPct > 0 ? pnlPct / riskPct : 0;
+      if (!pos.breakeven && rMultiple >= 1.0 && pnlPct > 0) {
+        const beSl = pos.entry * (1 - FEE * 2);
+        if (beSl < (pos.sl || 1e99)) { pos.sl = beSl; pos.breakeven = true; log('BREAKEVEN SHORT '+pos.sym,'ok'); }
+      }
       const trailDist = pos.trailDist || CFG.trail;
-      const trail = pos.lowP * (1 + trailDist);
+      let trailMult = 1.0;
+      if (ageMs > 8*3600000*0.75 && pnlPct > 0) trailMult = 0.5;
+      else if (ageMs > 2*3600000 && pnlPct > 0) trailMult = 0.7;
+      const trail = pos.lowP * (1 + trailDist * trailMult);
       let reason = null;
-      if      (cp >= pos.sl)                          reason = 'STOP LOSS';
+      if (ageMs > 105*60000 && rMultiple < 0.3 && !pos.partialClosed) reason = 'TIME STOP';
+      else if (cp >= pos.sl)                          reason = 'STOP LOSS';
       else if (cp <= pos.tp)                          reason = 'TAKE PROFIT';
-      else if (cp >= trail && pnlPct > 1.5)           reason = 'TRAILING STOP';
+      else if (cp >= trail && (pnlPct > 1.0 || pos.breakeven)) reason = 'TRAILING STOP';
       else if (pnlPct <= -12)                         reason = 'EMERGENCY STOP';
-      else if ((Date.now()-pos.entryTs) > 8*3600000)  reason = 'TIMEOUT 8h';
+      else if (ageMs > 8*3600000)                      reason = 'TIMEOUT 8h';
 
-      // Partial TP (50% pozycji w polowie drogi do TP) - symetria z LONG w checkPositions().
-      if (!reason && !pos.partialClosed) {
-        const tpPct = (pos.entry - pos.tp) / pos.entry * 100;
-        if (pnlPct >= tpPct * 0.5) {
+      if (!reason && !pos.partialClosed && rMultiple >= 1.15) {
+        {
           const halfSize = (pos.size || 0) / 2;
           const grossPnl = halfSize * pnlPct/100;
           const feeCost  = halfSize*FEE + (halfSize+grossPnl)*FEE;
           const halfPnl  = grossPnl - feeCost;
           pos.size = halfSize;
           pos.partialClosed = true;
-          pos.sl = pos.entry; // break-even stop
+          pos.sl = pos.entry * (1 - FEE * 2);
+          pos.breakeven = true;
           if (CFG.mode === 'paper') ST.paperBal = (ST.paperBal||0) + halfPnl;
           ST.dailyPnl = (ST.dailyPnl||0) + halfPnl;
           ST.shortTrades.unshift({sym:pos.sym, entry:pos.entry, exit:cp, size:halfSize,
@@ -2722,8 +2745,8 @@ async function openTrade(sig, fg, btcDrop, cachedTotal, cachedUSDC) {
     // Przelicz poziomy na cenie wykonania
     const execLevels = calcDynamicLevels(execP, sig.atrD, FEE, pairP);
     const newLongPos = {sym:sig.sym, entry:execP, qty:res.qty,
-      cp:execP, sl:execLevels.sl, tp:execLevels.tp,
-      trailDist:execLevels.trail,
+      cp:execP, sl:execLevels.sl, initialSl:execLevels.sl, tp:execLevels.tp,
+      trailDist:execLevels.trail, breakeven:false, partialClosed:false,
       highP:execP, entryTs:Date.now(), score:sig.score,
       finalProb:sig.finalProb, aiMethod:sig.aiMethod,
       nbFeatures:sig.nbFeatures, gbmFeatures:sig.gbmFeatures,
@@ -3355,8 +3378,8 @@ function renderMarketTab(sigs) {
         +'<span style="color:var(--red)">SL '+fp(s.shortLevels.sl)+'</span></div>')
       : '')
       +'<div style="display:flex;gap:5px;margin-bottom:5px;font-size:8pt;flex-wrap:wrap">'
-      +'<span style="color:'+(s.rsiD<=35?'var(--green)':s.rsiD>=65?'var(--red)':'var(--text2)')+'">RSI-D:'+s.rsiD+'</span>'
-      +'<span style="color:'+(s.rsi4h<=35?'var(--green)':s.rsi4h>=65?'var(--red)':'var(--text2)')+'">RSI-4H:'+s.rsi4h+'</span>'
+      +'<span style="color:'+(s.rsiD<=35?'var(--green)':s.rsiD>=65?'var(--red)':'var(--text2)')+'">RSI-1H:'+s.rsiD+'</span>'
+      +'<span style="color:'+(s.rsi4h<=35?'var(--green)':s.rsi4h>=65?'var(--red)':'var(--text2)')+'">RSI-15m:'+s.rsi4h+'</span>'
       +'<span style="color:'+(s.macdHist>0?'var(--green)':'var(--red)')+'">MACD:'+(s.macdHist>0?'up':'dn')+'</span>'
       +'<span style="color:var(--text2)">BB:'+(s.bbPos*100).toFixed(0)+'%</span>'
       +'<span style="color:'+(s.confirm1h?'var(--green)':'var(--text3)')+'">1H:'+(s.confirm1h?'ok':'-')+'</span>'
@@ -4496,7 +4519,7 @@ async function runBacktest() {
         var reason = null;
         if      (lo <= slPrice)              reason = 'SL';
         else if (hi >= tpPrice)              reason = 'TP';
-        else if (i - entryBar >= 7)          reason = 'TIMEOUT'; // 7 dni — zgodnie z live botem
+        else if (i - entryBar >= 8)          reason = 'TIMEOUT'; // 8h daytrading hard timeout
         if (reason) {
           var exitPrice = reason==='SL' ? slPrice : reason==='TP' ? tpPrice : closes[checkBar];
           if (!entryPrice || entryPrice <= 0) { inPos=false; continue; }
