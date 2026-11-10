@@ -27,7 +27,7 @@ const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
 const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
 const BREAKEVEN_R = 1.0;         // po +1R SL → entry + fee buffer
 const PARTIAL_R = 1.15;          // partial 50% przy ~1.15R (zamiast 65% TP)
-const MAX_SPREAD_PCT = 0.0015;   // 0.15% — powyzej: skip entry
+const MAX_SPREAD_PCT = 0.0025; // 0.25% — alty na RevX bywaja szersze   // 0.15% — powyzej: skip entry
 const DAILY_LOSS_LIMIT = 0.08;   // -8% equity dziennie → stop
 const COOLDOWN_SL_MS = 40 * 60000;      // 40 min po SL na pare
 const COOLDOWN_CONS3_MS = 90 * 60000;   // 90 min global po 3 stratach z rzedu
@@ -45,15 +45,15 @@ const CORR_GROUPS = [
 
 const PAIR_PARAMS_DEFAULT = {
   // Day trading: nieco niższe progi niż swing (więcej setupów intraday, bramy 1H/15m/5m i tak filtrują)
-  'XBTUSDT':  { minScore:60 },
-  'ETHUSDT':  { minScore:58 },
-  'SOLUSDT':  { minScore:56 },
-  'XRPUSDT':  { minScore:56 },
-  'DOGEUSDT': { minScore:58 },
-  'ADAUSDT':  { minScore:56 },
-  'AVAXUSDT': { minScore:56 },
-  'LINKUSDT': { minScore:56 },
-  'PEPEUSDT': { tp:0.035, sl:0.018, minScore:62 }
+  'XBTUSDT':  { minScore:55 },
+  'ETHUSDT':  { minScore:54 },
+  'SOLUSDT':  { minScore:52 },
+  'XRPUSDT':  { minScore:52 },
+  'DOGEUSDT': { minScore:54 },
+  'ADAUSDT':  { minScore:52 },
+  'AVAXUSDT': { minScore:52 },
+  'LINKUSDT': { minScore:52 },
+  'PEPEUSDT': { tp:0.035, sl:0.018, minScore:58 }
 };
 
 const REVX_BASE = 'https://revx.revolut.com/api/1.0';
@@ -780,12 +780,13 @@ function calcStats(trades) {
 // nakladany NA scoring/SMC powyzej (nie zastepuje go). dir = 'LONG'|'SHORT'.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function buildContextGate(trendD, dir) {
+  // Daytrading: long OK gdy nie-bear (trendD>=0). Wczesniej >=1 = ZERO longow w flat.
   if (dir === 'LONG') {
-    if (trendD >= 1) return { pass: true, reason: null };
-    return { pass: false, reason: 'KONTEKST 1H: brak wyraznego trendu bull (trendD=' + trendD + ')' };
+    if (trendD >= 0) return { pass: true, reason: null };
+    return { pass: false, reason: 'KONTEKST 1H: trend bear (trendD=' + trendD + ') — long zablokowany' };
   }
-  if (trendD <= -1) return { pass: true, reason: null };
-  return { pass: false, reason: 'KONTEKST 1H: brak wyraznego trendu bear (trendD=' + trendD + ')' };
+  if (trendD <= 0) return { pass: true, reason: null };
+  return { pass: false, reason: 'KONTEKST 1H: trend bull (trendD=' + trendD + ') — short zablokowany' };
 }
 
 function buildSetupGate(tf, dir) {
@@ -807,7 +808,7 @@ function buildSetupGate(tf, dir) {
 
   if (dir === 'LONG') {
     // SCIEZKA A - pullback do EMA w trendzie wzrostowym (klasyczny setup)
-    const rsiOk      = rsiTf >= 35 && rsiTf <= 58;
+    const rsiOk      = rsiTf >= 32 && rsiTf <= 62;
     const notOverext = price <= ema20 * (1 + Math.max(0.03, atrPct/100 * 2.5));
     if (nearEma && rsiOk && notOverext) return { pass: true, reason: null, rsi: rsiTf, mode: 'pullback' };
     // SCIEZKA B - WYBICIE / kontynuacja momentum. Cena nad rosnacymi EMA, RSI w
@@ -842,7 +843,7 @@ function buildTriggerGate(tf, dir) {
   const o = tf.o.at(-1), h = tf.h.at(-1), l = tf.l.at(-1), c = tf.c.at(-1);
   const vSum = tf.v.slice(-20).reduce((a,b)=>a+b,0);
   const volXR = vSum > 0 ? tf.v.at(-1) / (vSum/20) : 1;
-  const goodVolume = volXR >= 1.15;
+  const goodVolume = volXR >= 1.05;
   const macdTf = macdFull(tf.c);
   const rsiTf  = rsi(tf.c, 14);
   const body   = Math.abs(c - o);
@@ -1019,7 +1020,7 @@ score = Math.max(0, Math.min(100, Math.round(score)));
   // +18 sumowalo sie z podniesionymi progami (np. XBT 66+18=84) i robilo z tego
   // wylacznik, a nie utrudnienie - przy finalProb>=0.84 ani long, ani short (<=0.16)
   // nie mial realnych szans. +6 nadal zniecheca do chopu, ale nie zamyka drzwi.
-  if (regime === 'sideways')   { regimeMinScoreAdj = 6; }
+  if (regime === 'sideways')   { regimeMinScoreAdj = 3; }
   if (regime === 'bull_trend') { score += 5; why.push('Rezim: bull trend'); }
   if (regime === 'bear_trend') { score -= 15; why.push('Rezim: bear trend'); }
   if (regime === 'volatile')   { score -= 8;  why.push('Rezim: volatile'); }
@@ -1119,58 +1120,67 @@ if (nb.trained && gbm.trained) {
   let scoreBuy = false, scoreShort = false;
 
   // STRATEGIA DLA LONG (TRENDOWANIE W GĂ“RÄ) + SHORT W KOREKCIE TRENDU BYCZEGO
-if (trendD >= 1) {
-  // Daytrading: w bull_trend / strong_bull wystarczy 1 kluczowy warunek + trigger 5m (staged)
-  // W sideways/neutral — 2 warunki (jak wczesniej)
+// scoreBuy: oceniaj longi gdy NIE jestesmy w trendzie bear (trendD >= 0).
+// Wczesniej: tylko trendD >= 1 → flat (0) = ZERO longow mimo wysokiego score.
+if (trendD >= 0) {
   let longConfluence;
-  if (marketRegime === 'strong_bull' || regime === 'bull_trend') {
+  if (marketRegime === 'strong_bull' || regime === 'bull_trend' || trendD >= 1) {
+    // Trend / silny bull: 1 warunek wystarczy (+ staged trigger)
     longConfluence = [divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
-                      rsiD <= 48, nearBullOB || (liqSweep && liqSweep.type === 'bullish')].filter(Boolean).length;
+                      rsiD <= 50, nearBullOB || (liqSweep && liqSweep.type === 'bullish'),
+                      bbD.pos < 0.40, macdD.hist > 0].filter(Boolean).length;
   } else {
-    longConfluence = [rsiD <= 45, bbD.pos < 0.30, divD.bull, volR > 1.2].filter(Boolean).length;
+    // Flat / sideways: 1 z 4 (nie 2) — daytrading range tez handluje
+    longConfluence = [rsiD <= 48, bbD.pos < 0.35, divD.bull, volR > 1.1, macdD.hist > 0].filter(Boolean).length;
   }
 
-  const longNeed = (marketRegime === 'strong_bull' || regime === 'bull_trend') ? 1 : 2;
-  const longThreshold = marketRegime === 'strong_bull' ? minScore * 0.92 / 100 : minScore / 100;
+  const longNeed = (marketRegime === 'strong_bull' || regime === 'bull_trend' || trendD >= 1) ? 1 : 1;
+  const longThreshold = marketRegime === 'strong_bull' ? minScore * 0.90 / 100 : minScore / 100;
   scoreBuy = finalProb >= longThreshold && longConfluence >= longNeed && !bearBias;
 
-  // SHORT w korekcie bull — tylko gdy wykupienie + brak bullBias
+  // SHORT w korekcie bull / flat — tylko przy wykupieniu
   if (rsiD > 60 && bbD.pos > 0.75 && !bullBias && marketRegime !== 'strong_bull') {
     const shortConfluence = [divD.bear, volR > 1.3, structure.event === 'CHoCH_down'].filter(Boolean).length;
-    const shortThresholdInBull = marketRegime === 'strong_bull' ? (100 - minScore * 0.92) / 100 : (100 - minScore) / 100;
+    const shortThresholdInBull = (100 - minScore) / 100;
     scoreShort = finalProb <= shortThresholdInBull && shortConfluence >= 2 && !bullBias;
   }
-} else if (trendD <= -1) {
+}
+if (trendD <= -1) {
   const shortConfluence = [rsiD >= 55, bbD.pos > 0.70, divD.bear, volR > 1.2].filter(Boolean).length;
   const shortThreshold = marketRegime === 'strong_bear' ? ((100 - minScore) * 0.92) / 100 : (100 - minScore) / 100;
   scoreShort = finalProb <= shortThreshold && shortConfluence >= (marketRegime === 'strong_bear' ? 1 : 2) && !bullBias;
 }
 
-  // Dodatkowy "twardy" filtr wejscia: KONTEKST(1H) -> SETUP(15m pullback/odbicie)
-  // -> TRIGGER(5m swieca zapalajaca). Score+SMC powyzej wybiera KANDYDATA, ale
-  // staged* musi przejsc zeby buy/shortSignal = true.
-
 const ctxLong     = buildContextGate(trendD, 'LONG');
-  const setupLong   = ctxLong.pass   ? buildSetupGate(h4, 'LONG')   : { pass:false, reason:null };
-  const triggerLong = (ctxLong.pass && setupLong.pass) ? buildTriggerGate(h1, 'LONG') : { pass:false, reason:null };
-  const stagedLong  = ctxLong.pass && setupLong.pass && triggerLong.pass;
+  const setupLong   = buildSetupGate(h4, 'LONG');
+  const triggerLong = buildTriggerGate(h1, 'LONG');
+  // Daytrading: 2 z 3 bramek wystarczy (nie wszystkie 3). Przy bardzo wysokim
+  // score (>= minScore+12) wystarczy SETUP+TRIGGER albo KONTEKST+TRIGGER.
+  const gatesPass = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
+  const highConviction = finalProb >= (minScore + 12) / 100;
+  const stagedLong = gatesPass >= 2
+    || (highConviction && setupLong.pass && triggerLong.pass)
+    || (highConviction && ctxLong.pass && triggerLong.pass);
   if (scoreBuy && !stagedLong) {
-    why.push((!ctxLong.pass ? ctxLong.reason : !setupLong.pass ? setupLong.reason : triggerLong.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: odrzucone');
+    why.push((!ctxLong.pass ? ctxLong.reason : !setupLong.pass ? setupLong.reason : triggerLong.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: <2/3 bramek');
   }
 
   const ctxShort     = buildContextGate(trendD, 'SHORT');
-  const setupShort   = ctxShort.pass   ? buildSetupGate(h4, 'SHORT')   : { pass:false, reason:null };
-  const triggerShort = (ctxShort.pass && setupShort.pass) ? buildTriggerGate(h1, 'SHORT') : { pass:false, reason:null };
-  const stagedShort  = ctxShort.pass && setupShort.pass && triggerShort.pass;
+  const setupShort   = buildSetupGate(h4, 'SHORT');
+  const triggerShort = buildTriggerGate(h1, 'SHORT');
+  const gatesShort = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
+  const stagedShort = gatesShort >= 2;
   if (scoreShort && !stagedShort) {
-    why.push((!ctxShort.pass ? ctxShort.reason : !setupShort.pass ? setupShort.reason : triggerShort.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: odrzucone');
+    why.push((!ctxShort.pass ? ctxShort.reason : !setupShort.pass ? setupShort.reason : triggerShort.reason) || 'Filtr SHORT: <2/3 bramek');
   }
 
   // Sideways: long tylko w discount (twardszy gate)
   let buy = scoreBuy && stagedLong;
-  if (buy && regime === 'sideways' && premDisc.zone !== 'discount') {
+  // Sideways + premium: nie hard-block — tylko kara / wyzszy prog (juz w score).
+  // Hard-reject przy wysokim score zabijal daytrading w range.
+  if (buy && regime === 'sideways' && premDisc.zone === 'premium' && finalProb < (minScore + 8) / 100) {
     buy = false;
-    why.push('Sideways: brak discount — long odrzucony');
+    why.push('Sideways+premium: score za niski na long poza discount');
   }
 
   const shortSignal = scoreShort && stagedShort;
@@ -2016,7 +2026,7 @@ async function btcDropGuard() {
       pump: pct > 4,
       change24h: pct,
       change1h,
-      bear1h: change1h <= -2.0 // hard gate alt-long gdy BTC -2%/1H
+      bear1h: change1h <= -3.0 // hard gate alt-long gdy BTC -2%/1H
     };
   } catch(e) { return { drop: false, pump: false, change24h: 0, change1h: 0, bear1h: false }; }
 }
@@ -2838,7 +2848,7 @@ function defaultConfig() {
     active: false, mode: 'paper',
     tp: 0.02, sl: 0.01, trail: 0.008,
     maxPos: 3, posSize: 12, riskPct: 1.25, // daytrading: mniej pozycji, mniejsze ryzyko
-    paperBalance: 1000, minScore: 56, fgMin: 20,
+    paperBalance: 1000, minScore: 52, fgMin: 15,
     revxApiKey: '', revxPrivKey: '',
     tgToken: '', tgChat: ''
   };
@@ -2853,7 +2863,7 @@ function defaultState() {
     lastCycle: null, lastFG: { val: 50, label: 'Neutral', ts: 0 },
     lastSigs: [],
     nb: null, gbm: null, ql: null, ensembleW: null,
-    pairParams: {}, adaptiveMinScore: 56,
+    pairParams: {}, adaptiveMinScore: 52,
     peakBalance: 0, peakBalanceMode: 'paper',
     drawdownBlock: 0, stats: null,
     lastGbmRefit: 0,
