@@ -1735,7 +1735,7 @@ async function analyzeSwing(sym) {
 
   // bearBias byl wczesniej tylko odpisem punktowym (-30) - latwym do przebicia
   // innymi bonusami. Teraz to twarda blokada wejscia. Ta sama poprawka co w worker.js.
-  const scoreBuy = finalProb >= effectiveMinScore/100 && confluence >= 2 && !bearBias;
+  const scoreBuy = finalProb >= effectiveMinScore/100 && confluence >= 1 && !bearBias;
 
   // ── Poziomy TP/SL/R:R (dynamiczne, ATR, per-para override) + sygnal SHORT informacyjny ─
   const levels = calcDynamicLevels(price, atrD, FEE, pairP);
