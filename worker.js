@@ -21,7 +21,7 @@ const FEE = 0.0009;
 const SLIPPAGE_PAPER = 0.0005;
 
 // FIX #3: Minimalny oczekiwany zysk netto (po kosztach) zanim otworzymy pozycje.
-const MIN_COST_COVERAGE_RATIO = 2.5; // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
+const MIN_COST_COVERAGE_RATIO = 2.0; // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
 
 const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
 const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
@@ -45,15 +45,15 @@ const CORR_GROUPS = [
 
 const PAIR_PARAMS_DEFAULT = {
   // Day trading: nieco niższe progi niż swing (więcej setupów intraday, bramy 1H/15m/5m i tak filtrują)
-  'XBTUSDT':  { minScore:55 },
-  'ETHUSDT':  { minScore:54 },
-  'SOLUSDT':  { minScore:52 },
-  'XRPUSDT':  { minScore:52 },
-  'DOGEUSDT': { minScore:54 },
-  'ADAUSDT':  { minScore:52 },
-  'AVAXUSDT': { minScore:52 },
-  'LINKUSDT': { minScore:52 },
-  'PEPEUSDT': { tp:0.035, sl:0.018, minScore:58 }
+  'XBTUSDT':  { minScore:50 },
+  'ETHUSDT':  { minScore:48 },
+  'SOLUSDT':  { minScore:48 },
+  'XRPUSDT':  { minScore:48 },
+  'DOGEUSDT': { minScore:50 },
+  'ADAUSDT':  { minScore:48 },
+  'AVAXUSDT': { minScore:48 },
+  'LINKUSDT': { minScore:48 },
+  'PEPEUSDT': { tp:0.035, sl:0.018, minScore:52 }
 };
 
 const REVX_BASE = 'https://revx.revolut.com/api/1.0';
@@ -519,6 +519,7 @@ async function runBotCycle(env) {
       for (const sig of sigs) {
         if ((state.positions || []).length >= cfg.maxPos) break;
         if (sig.buy) {
+          addLog(state, 'BUY SIGNAL ' + sig.sym + ' score=' + sig.score + ' fp=' + (sig.finalProb*100).toFixed(0) + '% — proba otwarcia', 'ok');
           await openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew);
         }
       }
@@ -798,79 +799,84 @@ function buildSetupGate(tf, dir) {
   const atrPct = price > 0 ? (atrTf / price) * 100 : 1;
   const distEma20 = Math.abs(price/ema20 - 1) * 100;
   const distEma50 = Math.abs(price/ema50 - 1) * 100;
-  // Prog odleglosci skalowany zmiennoscia zamiast sztywnych 1.2%/1.5%. Sztywny
-  // prog byl za ciasny w dni z duzymi ruchami - cena naturalnie oddala sie wtedy
-  // od EMA, wiec gate odrzucal WSZYSTKO dokladnie w sesjach o najwiekszym
-  // potencjale. Widelki 1.2-4.0% trzymaja go rozsadnym takze przy skrajnym ATR.
-  const emaTol20 = Math.min(4.0, Math.max(1.2, atrPct * 1.5));
-  const emaTol50 = Math.min(4.5, Math.max(1.5, atrPct * 1.8));
+  const emaTol20 = Math.min(5.0, Math.max(1.2, atrPct * 1.8));
+  const emaTol50 = Math.min(5.5, Math.max(1.5, atrPct * 2.0));
   const nearEma = distEma20 < emaTol20 || distEma50 < emaTol50;
 
   if (dir === 'LONG') {
-    // SCIEZKA A - pullback do EMA w trendzie wzrostowym (klasyczny setup)
-    const rsiOk      = rsiTf >= 32 && rsiTf <= 62;
-    const notOverext = price <= ema20 * (1 + Math.max(0.03, atrPct/100 * 2.5));
+    // A: pullback do EMA
+    const rsiOk      = rsiTf >= 30 && rsiTf <= 65;
+    const notOverext = price <= ema20 * (1 + Math.max(0.04, atrPct/100 * 3));
     if (nearEma && rsiOk && notOverext) return { pass: true, reason: null, rsi: rsiTf, mode: 'pullback' };
-    // SCIEZKA B - WYBICIE / kontynuacja momentum. Cena nad rosnacymi EMA, RSI w
-    // strefie sily (ale nie skrajnie wykupionej). Bez tej sciezki bot ignorowal
-    // dni silnych, jednokierunkowych ruchow, bo nigdy nie bylo "cofki" do EMA.
-    const stacked   = price > ema20 && ema20 > ema50;
-    const rsiMomOk  = rsiTf >= 52 && rsiTf <= 80; // sufit 74 odcinal wiekszosc realnych trendow (test: 14% vs 38% pokrycia)
-    const notBlowoff = price <= ema20 * (1 + Math.max(0.05, atrPct/100 * 4));
+    // B: momentum / wybiciowe
+    const stacked   = price > ema20 && ema20 >= ema50 * 0.998;
+    const rsiMomOk  = rsiTf >= 48 && rsiTf <= 78;
+    const notBlowoff = price <= ema20 * (1 + Math.max(0.06, atrPct/100 * 5));
     if (stacked && rsiMomOk && notBlowoff) return { pass: true, reason: null, rsi: rsiTf, mode: 'breakout' };
-    const reason = !nearEma && !stacked ? 'SETUP 15m: brak pullbacku do EMA i brak ukladu wybicia'
-      : !rsiOk && !rsiMomOk ? 'SETUP 15m: RSI ' + rsiTf.toFixed(0) + ' poza strefa korekty i poza strefa momentum'
-      : 'SETUP 15m: cena zbyt rozciagnieta nad EMA20 (blow-off)';
-    return { pass: false, reason, rsi: rsiTf };
+    // C: daytrading continuation — nie overbought, nie totalny dump
+    const contOk = rsiTf >= 40 && rsiTf <= 70 && price >= ema50 * 0.985 && notBlowoff;
+    if (contOk) return { pass: true, reason: null, rsi: rsiTf, mode: 'continuation' };
+    return {
+      pass: false,
+      reason: 'SETUP 15m: brak pullback/breakout/continuation (RSI ' + rsiTf.toFixed(0) + ')',
+      rsi: rsiTf
+    };
   }
 
-  // SCIEZKA A - odbicie do EMA w trendzie spadkowym
-  const rsiOk      = rsiTf <= 65 && rsiTf >= 42;
-  const notOverext = price >= ema20 * (1 - Math.max(0.03, atrPct/100 * 2.5));
+  // SHORT
+  const rsiOk      = rsiTf >= 35 && rsiTf <= 70;
+  const notOverext = price >= ema20 * (1 - Math.max(0.04, atrPct/100 * 3));
   if (nearEma && rsiOk && notOverext) return { pass: true, reason: null, rsi: rsiTf, mode: 'pullback' };
-  // SCIEZKA B - zalamanie / kontynuacja spadku (lustrzana do wybicia)
-  const stackedDn  = price < ema20 && ema20 < ema50;
-  const rsiMomOk   = rsiTf >= 20 && rsiTf <= 48; // lustrzanie do sufitu 80 po stronie long
-  const notBlowoff = price >= ema20 * (1 - Math.max(0.05, atrPct/100 * 4));
+  const stackedDn  = price < ema20 && ema20 <= ema50 * 1.002;
+  const rsiMomOk   = rsiTf >= 22 && rsiTf <= 52;
+  const notBlowoff = price >= ema20 * (1 - Math.max(0.06, atrPct/100 * 5));
   if (stackedDn && rsiMomOk && notBlowoff) return { pass: true, reason: null, rsi: rsiTf, mode: 'breakdown' };
-  const reason = !nearEma && !stackedDn ? 'SETUP 15m: brak odbicia do EMA i brak ukladu zalamania'
-    : !rsiOk && !rsiMomOk ? 'SETUP 15m: RSI ' + rsiTf.toFixed(0) + ' poza strefa odbicia i poza strefa momentum'
-    : 'SETUP 15m: cena zbyt rozciagnieta pod EMA20 (blow-off)';
-  return { pass: false, reason, rsi: rsiTf };
+  const contOk = rsiTf >= 30 && rsiTf <= 60 && price <= ema50 * 1.015 && notBlowoff;
+  if (contOk) return { pass: true, reason: null, rsi: rsiTf, mode: 'continuation' };
+  return {
+    pass: false,
+    reason: 'SETUP 15m SHORT: brak setupu (RSI ' + rsiTf.toFixed(0) + ')',
+    rsi: rsiTf
+  };
 }
 
 function buildTriggerGate(tf, dir) {
+  // Daytrading: trigger NIE moze wymagac 4 warunkow naraz — to zabijalo handel.
+  // Pass gdy 2 z: swieca w kierunku, wolumen, momentum, akceptowalny knot.
   const o = tf.o.at(-1), h = tf.h.at(-1), l = tf.l.at(-1), c = tf.c.at(-1);
   const vSum = tf.v.slice(-20).reduce((a,b)=>a+b,0);
   const volXR = vSum > 0 ? tf.v.at(-1) / (vSum/20) : 1;
-  const goodVolume = volXR >= 1.05;
   const macdTf = macdFull(tf.c);
   const rsiTf  = rsi(tf.c, 14);
-  const body   = Math.abs(c - o);
+  const body   = Math.abs(c - o) || 1e-12;
 
   if (dir === 'LONG') {
     const bullish = c > o;
     const upperWick = h - Math.max(o, c);
-    const okWick = upperWick < body * 0.9 + 1e-9;
-    const momentum = macdTf.hist > 0 || rsiTf > 45;
-    if (bullish && goodVolume && momentum && okWick) return { pass: true, reason: null, volXR };
-    const reason = !bullish ? 'TRIGGER 5m: ostatnia swieca spadkowa â€” brak triggera'
-      : !goodVolume ? 'TRIGGER 5m: wolumen za niski (' + volXR.toFixed(2) + 'x)'
-      : !momentum ? 'TRIGGER 5m: momentum nie potwierdza (RSI ' + rsiTf.toFixed(0) + ')'
-      : 'TRIGGER 5m: za duzy gorny knot â€” odrzucenie wzrostu';
-    return { pass: false, reason, volXR };
+    const okWick = upperWick <= body * 1.2;
+    const momentum = macdTf.hist > 0 || rsiTf >= 42;
+    const volOk = volXR >= 0.85;
+    const hits = [bullish, volOk, momentum, okWick].filter(Boolean).length;
+    if (hits >= 2 && (bullish || momentum)) return { pass: true, reason: null, volXR, hits };
+    return {
+      pass: false,
+      reason: 'TRIGGER 5m: za slaby (hits=' + hits + '/4, RSI ' + rsiTf.toFixed(0) + ', vol ' + volXR.toFixed(2) + 'x)',
+      volXR, hits
+    };
   }
 
   const bearish = c < o;
   const lowerWick = Math.min(o, c) - l;
-  const okWick = lowerWick < body * 0.9 + 1e-9;
-  const momentum = macdTf.hist < 0 || rsiTf < 55;
-  if (bearish && goodVolume && momentum && okWick) return { pass: true, reason: null, volXR };
-  const reason = !bearish ? 'TRIGGER 5m: ostatnia swieca wzrostowa â€” brak triggera'
-    : !goodVolume ? 'TRIGGER 5m: wolumen za niski (' + volXR.toFixed(2) + 'x)'
-    : !momentum ? 'TRIGGER 5m: momentum nie potwierdza (RSI ' + rsiTf.toFixed(0) + ')'
-    : 'TRIGGER 5m: za duzy dolny knot â€” odrzucenie spadku';
-  return { pass: false, reason, volXR };
+  const okWick = lowerWick <= body * 1.2;
+  const momentum = macdTf.hist < 0 || rsiTf <= 58;
+  const volOk = volXR >= 0.85;
+  const hits = [bearish, volOk, momentum, okWick].filter(Boolean).length;
+  if (hits >= 2 && (bearish || momentum)) return { pass: true, reason: null, volXR, hits };
+  return {
+    pass: false,
+    reason: 'TRIGGER 5m SHORT: za slaby (hits=' + hits + '/4, RSI ' + rsiTf.toFixed(0) + ', vol ' + volXR.toFixed(2) + 'x)',
+    volXR, hits
+  };
 }
 
 async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adaptiveMinScore, btcInfo) {
@@ -1020,7 +1026,7 @@ score = Math.max(0, Math.min(100, Math.round(score)));
   // +18 sumowalo sie z podniesionymi progami (np. XBT 66+18=84) i robilo z tego
   // wylacznik, a nie utrudnienie - przy finalProb>=0.84 ani long, ani short (<=0.16)
   // nie mial realnych szans. +6 nadal zniecheca do chopu, ale nie zamyka drzwi.
-  if (regime === 'sideways')   { regimeMinScoreAdj = 3; }
+  if (regime === 'sideways')   { regimeMinScoreAdj = 0; }
   if (regime === 'bull_trend') { score += 5; why.push('Rezim: bull trend'); }
   if (regime === 'bear_trend') { score -= 15; why.push('Rezim: bear trend'); }
   if (regime === 'volatile')   { score -= 8;  why.push('Rezim: volatile'); }
@@ -1062,7 +1068,7 @@ score = Math.max(0, Math.min(100, Math.round(score)));
   let qlBonus = 0;
   if (qlSugg) {
     if (qlSugg.action === 'BUY'  && qlSugg.confidence > 0.05) { qlBonus =  8; why.push('QL: BUY'); }
-    if (qlSugg.action === 'HOLD' && qlSugg.confidence > 0.05) { qlBonus = -10; why.push('QL: czekac'); }
+    if (qlSugg.action === 'HOLD' && qlSugg.confidence > 0.15) { qlBonus = -4; why.push('QL: ostroznie'); }
     score = Math.max(0, Math.min(100, score + qlBonus));
   }
 
@@ -1087,18 +1093,20 @@ if (marketRegime === 'strong_bull' || marketRegime === 'strong_bear') {
 // ============================================================
 if (nb.trained && gbm.trained) {
   const wSum = (dynamicEw.score + dynamicEw.nb + dynamicEw.gbm + dynamicEw.obi + dynamicEw.ql) || 1;
-  finalProb = Math.max(0, Math.min(1,
+  const ens = Math.max(0, Math.min(1,
     (score/100 * dynamicEw.score + nbPred.prob * dynamicEw.nb + gbmProb * dynamicEw.gbm +
      Math.max(0, Math.min(1, obiNorm)) * dynamicEw.obi +
      (qlSugg && qlSugg.action==='BUY' ? 1 : 0) * dynamicEw.ql) / wSum));
+  // Floor: ensemble nie moze zbic finalProb ponizej 85% raw score (daytrading entry)
+  finalProb = Math.max(ens, (score / 100) * 0.85);
   aiMethod = 'Ensemble(Score+NB+GBM+OBI+QL)';
-  if (nbPred.label === 'SKIP' && gbmProb < 0.4) why.push('AI odradza wejscie');
+  if (nbPred.label === 'SKIP' && gbmProb < 0.4) why.push('AI ostrozne (floor score*0.85)');
 } else if (nb.trained) {
   const wSum = (dynamicEw.score + dynamicEw.nb + dynamicEw.obi) || 1;
-  finalProb = (score/100 * dynamicEw.score + nbPred.prob * dynamicEw.nb + Math.max(0,Math.min(1,obiNorm)) * dynamicEw.obi) / wSum;
+  const ens = (score/100 * dynamicEw.score + nbPred.prob * dynamicEw.nb + Math.max(0,Math.min(1,obiNorm)) * dynamicEw.obi) / wSum;
+  finalProb = Math.max(ens, (score / 100) * 0.85);
   aiMethod = 'Score+NB+OBI';
 } else {
-  // STRATEGIA PODSTAWOWA DLA OKRESU ROZGRZEWKI (brak nauczonych modeli)
   finalProb = score / 100;
   aiMethod = 'Basic Score (no models)';
 }
@@ -1120,35 +1128,29 @@ if (nb.trained && gbm.trained) {
   let scoreBuy = false, scoreShort = false;
 
   // STRATEGIA DLA LONG (TRENDOWANIE W GĂ“RÄ) + SHORT W KOREKCIE TRENDU BYCZEGO
-// scoreBuy: oceniaj longi gdy NIE jestesmy w trendzie bear (trendD >= 0).
-// Wczesniej: tylko trendD >= 1 → flat (0) = ZERO longow mimo wysokiego score.
+// scoreBuy: daytrading — long gdy nie-bear i finalProb >= prog.
+// Confluence SMC jest BONUSEM, nie twardym wymogiem (wczesniej zero trade'ow).
 if (trendD >= 0) {
-  let longConfluence;
-  if (marketRegime === 'strong_bull' || regime === 'bull_trend' || trendD >= 1) {
-    // Trend / silny bull: 1 warunek wystarczy (+ staged trigger)
-    longConfluence = [divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
-                      rsiD <= 50, nearBullOB || (liqSweep && liqSweep.type === 'bullish'),
-                      bbD.pos < 0.40, macdD.hist > 0].filter(Boolean).length;
-  } else {
-    // Flat / sideways: 1 z 4 (nie 2) — daytrading range tez handluje
-    longConfluence = [rsiD <= 48, bbD.pos < 0.35, divD.bull, volR > 1.1, macdD.hist > 0].filter(Boolean).length;
-  }
+  const longConfluence = [
+    rsiD <= 55, bbD.pos < 0.45, macdD.hist > 0, volR > 0.9,
+    divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
+    nearBullOB || (liqSweep && liqSweep.type === 'bullish')
+  ].filter(Boolean).length;
+  const longThreshold = minScore / 100;
+  // Wystarczy prog + brak bearBias. Confluence>=1 preferowane, ale przy score
+  // powyzej progu +5 nie blokujemy (inaczej bot nie handluje w trendzie).
+  const confOk = longConfluence >= 1 || finalProb >= (minScore + 5) / 100;
+  scoreBuy = finalProb >= longThreshold && confOk && !bearBias;
+  if (scoreBuy) why.push('scoreBuy OK (conf=' + longConfluence + ', fp=' + (finalProb*100).toFixed(0) + ')');
 
-  const longNeed = (marketRegime === 'strong_bull' || regime === 'bull_trend' || trendD >= 1) ? 1 : 1;
-  const longThreshold = marketRegime === 'strong_bull' ? minScore * 0.90 / 100 : minScore / 100;
-  scoreBuy = finalProb >= longThreshold && longConfluence >= longNeed && !bearBias;
-
-  // SHORT w korekcie bull / flat — tylko przy wykupieniu
-  if (rsiD > 60 && bbD.pos > 0.75 && !bullBias && marketRegime !== 'strong_bull') {
-    const shortConfluence = [divD.bear, volR > 1.3, structure.event === 'CHoCH_down'].filter(Boolean).length;
-    const shortThresholdInBull = (100 - minScore) / 100;
-    scoreShort = finalProb <= shortThresholdInBull && shortConfluence >= 2 && !bullBias;
+  if (rsiD > 62 && bbD.pos > 0.75 && !bullBias && marketRegime !== 'strong_bull') {
+    const shortConfluence = [divD.bear, volR > 1.2, structure.event === 'CHoCH_down', macdD.hist < 0].filter(Boolean).length;
+    scoreShort = finalProb <= (100 - minScore) / 100 && shortConfluence >= 1 && !bullBias;
   }
 }
 if (trendD <= -1) {
-  const shortConfluence = [rsiD >= 55, bbD.pos > 0.70, divD.bear, volR > 1.2].filter(Boolean).length;
-  const shortThreshold = marketRegime === 'strong_bear' ? ((100 - minScore) * 0.92) / 100 : (100 - minScore) / 100;
-  scoreShort = finalProb <= shortThreshold && shortConfluence >= (marketRegime === 'strong_bear' ? 1 : 2) && !bullBias;
+  const shortConfluence = [rsiD >= 50, bbD.pos > 0.55, divD.bear, volR > 1.0, macdD.hist < 0].filter(Boolean).length;
+  scoreShort = finalProb <= (100 - minScore) / 100 && shortConfluence >= 1 && !bullBias;
 }
 
 const ctxLong     = buildContextGate(trendD, 'LONG');
@@ -2848,7 +2850,7 @@ function defaultConfig() {
     active: false, mode: 'paper',
     tp: 0.02, sl: 0.01, trail: 0.008,
     maxPos: 3, posSize: 12, riskPct: 1.25, // daytrading: mniej pozycji, mniejsze ryzyko
-    paperBalance: 1000, minScore: 52, fgMin: 15,
+    paperBalance: 1000, minScore: 48, fgMin: 12,
     revxApiKey: '', revxPrivKey: '',
     tgToken: '', tgChat: ''
   };
@@ -2863,7 +2865,7 @@ function defaultState() {
     lastCycle: null, lastFG: { val: 50, label: 'Neutral', ts: 0 },
     lastSigs: [],
     nb: null, gbm: null, ql: null, ensembleW: null,
-    pairParams: {}, adaptiveMinScore: 52,
+    pairParams: {}, adaptiveMinScore: 48,
     peakBalance: 0, peakBalanceMode: 'paper',
     drawdownBlock: 0, stats: null,
     lastGbmRefit: 0,
