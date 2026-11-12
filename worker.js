@@ -1159,13 +1159,13 @@ const ctxLong     = buildContextGate(trendD, 'LONG');
   // Daytrading: 2 z 3 bramek wystarczy (nie wszystkie 3). Przy bardzo wysokim
   // score (>= minScore+12) wystarczy SETUP+TRIGGER albo KONTEKST+TRIGGER.
   const gatesPass = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
-  const highConviction = finalProb >= (minScore + 12) / 100;
-  const stagedLong = gatesPass >= 2
-    || (highConviction && setupLong.pass && triggerLong.pass)
-    || (highConviction && ctxLong.pass && triggerLong.pass);
+  const stagedLong = gatesPass >= 1;
   if (scoreBuy && !stagedLong) {
-    why.push((!ctxLong.pass ? ctxLong.reason : !setupLong.pass ? setupLong.reason : triggerLong.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: <2/3 bramek');
+    why.push('Filtr timing: 0/3 bramek (ctx/setup/trigger)');
+  } else if (scoreBuy && gatesPass === 1) {
+    why.push('Timing: 1/3 bramek — daytrading entry OK');
   }
+
 
   const ctxShort     = buildContextGate(trendD, 'SHORT');
   const setupShort   = buildSetupGate(h4, 'SHORT');
