@@ -938,7 +938,7 @@ function loadAll() {
   try { const c=localStorage.getItem('swingai_revolut_cfg_v1'); if(c) CFG={...CFG,...JSON.parse(c)}; } catch(e){}
   if (!CFG.intervalMin || CFG.intervalMin < 3) CFG.intervalMin = 3;
   // Migracja daytrading: stare progi swing (62+) blokowaly paper
-  if (!CFG.minScore || CFG.minScore > 55) CFG.minScore = 48;
+  if (!CFG.minScore || CFG.minScore > 52) CFG.minScore = 45;
   if (CFG.fgMin == null || CFG.fgMin > 25) CFG.fgMin = 12;
   if (CFG.maxPos == null || CFG.maxPos > 4) CFG.maxPos = 3;
   if (CFG.mode === 'mexc') CFG.mode = 'live';
@@ -1095,8 +1095,8 @@ function isPumpDump(sig) {
 }
 
 function isVolumeAnomaly(sig) {
-  if (sig.volR < 0.35) return true;
-  if (sig.score >= 62 && sig.vol4R < 0.3) return true;
+  if (sig.volR < 0.22) return true;
+  if (sig.score >= 45 && sig.vol4R < 0.18) return true;
   return false;
 }
 
@@ -1719,44 +1719,45 @@ async function analyzeSwing(sym) {
   }
 
   // scoreBuy: nie-bear + prog. Confluence opcjonalne przy wyzszym score.
-  const confOk = confluence >= 1 || finalProb >= (effectiveMinScore + 5) / 100;
-  const scoreBuy = trendD >= 0 && finalProb >= effectiveMinScore/100 && confOk && !bearBias;
-  if (scoreBuy) why.push('scoreBuy OK conf=' + confluence + ' fp=' + (finalProb*100).toFixed(0));
-
-  // ── Poziomy TP/SL/R:R (dynamiczne, ATR, per-para override) + sygnal SHORT informacyjny ─
-  const levels = calcDynamicLevels(price, atrD, FEE, pairP);
-  // SHORT jest WYLACZNIE informacyjny - Revolut X nie obsluguje marginu/shortow,
-  // bot nigdy nie wykonuje realnej krotkiej sprzedazy.
-  // Lustrzany confluence gate (ten sam prog co dla longa) - poprzednio short
-  // wymagal tylko JEDNEGO potwierdzenia, przez co byl mniej rygorystyczny niz
-  // long mimo ze wizualnie wyglada tak samo pewnie na wykresie.
-  const bearConfluence = [
-    trendD <= -1,
-    (rsiD >= 60 || bbD.pos > 0.80 || divD.bear || div4h.bear),
-    (structure.event === 'BOS_down' || structure.event === 'CHoCH_down' || nearBearOB || (liqSweep && liqSweep.type === 'bearish')),
-    (volR > 1.3 || vol4R > 1.3)
+  // DAYTRADING ENTRY — mirror of worker.js (symmetric long/short, no swing lock)
+  const longThreshold = effectiveMinScore / 100;
+  const shortThreshold = 1 - longThreshold;
+  const hardBear = (trendD === -1 && rsiD > 55 && macdD.hist < 0);
+  const longConfluence2 = [
+    rsiD <= 58, bbD.pos < 0.50, macdD.hist > 0, volR > 0.85,
+    divD.bull || div4h.bull,
+    structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
+    nearBullOB || (liqSweep && liqSweep.type === 'bullish')
   ].filter(Boolean).length;
-  const scoreShort = finalProb <= (1 - effectiveMinScore/100) && bearConfluence >= 2 && !bullBias;
+  const trendAllowsLong = trendD >= 0 || (trendD === -1 && rsiD <= 38 && (divD.bull || bbD.pos < 0.25));
+  let scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && longConfluence2 >= 1;
+  if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold + 0.08) scoreBuy = true;
+  if (scoreBuy) why.push('LONG candidate conf=' + longConfluence2 + ' fp=' + (finalProb*100).toFixed(0));
 
-  // Dodatkowy twardy filtr timingu (patrz komentarz nad buildContextGate wyzej) -
-  // nakladamy sie NA scoreBuy/scoreShort, nie zastepujemy scoringu.
+  const levels = calcDynamicLevels(price, atrD, FEE, pairP);
+  const shortConfluence2 = [
+    rsiD >= 55, bbD.pos > 0.55, macdD.hist < 0, volR > 0.9,
+    divD.bear || div4h.bear,
+    structure.event === 'BOS_down' || structure.event === 'CHoCH_down',
+    nearBearOB || (liqSweep && liqSweep.type === 'bearish')
+  ].filter(Boolean).length;
+  const trendAllowsShort = trendD <= 0;
+  const scoreShort = trendAllowsShort && finalProb <= shortThreshold && shortConfluence2 >= 2 && !bullBias;
+  if (scoreShort) why.push('SHORT candidate conf=' + shortConfluence2);
+
   const ctxLong     = buildContextGate(trendD, 'LONG');
   const setupLong   = buildSetupGate(h4, 'LONG');
   const triggerLong = buildTriggerGate(h1, 'LONG');
-  const gatesPass = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
-  const stagedLong  = gatesPass >= 1; // daytrading: 1/3 wystarczy
-  if (scoreBuy && !stagedLong) {
-    why.push('Filtr timing: 0/3 bramek');
-  }
+  const gatesLong = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
+  const stagedLong  = gatesLong >= 1 || (scoreBuy && finalProb >= longThreshold + 0.12);
+  if (scoreBuy && !stagedLong) why.push('LONG timing 0/3');
 
   const ctxShort     = buildContextGate(trendD, 'SHORT');
   const setupShort   = buildSetupGate(h4, 'SHORT');
   const triggerShort = buildTriggerGate(h1, 'SHORT');
   const gatesShort = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
-  const stagedShort  = gatesShort >= 1;
-  if (scoreShort && !stagedShort) {
-    why.push((!ctxShort.pass ? ctxShort.reason : !setupShort.pass ? setupShort.reason : triggerShort.reason) || 'Filtr KONTEKST/SETUP/TRIGGER: odrzucone');
-  }
+  const stagedShort  = gatesShort >= 2;
+  if (scoreShort && !stagedShort) why.push('SHORT timing <2/3');
 
   const buy         = scoreBuy && stagedLong;
   const shortSignal = scoreShort && stagedShort;
@@ -2673,9 +2674,12 @@ async function openTrade(sig, fg, btcDrop, cachedTotal, cachedUSDC) {
   if (ST.globalBlockUntil > Date.now())        { log('Globalna blokada','warn'); return; }
   if (isPumpDump(sig)) return;
   if (isVolumeAnomaly(sig)) { log('⚠️ Vol anomaly: '+sig.sym+' vol='+sig.volR.toFixed(2)+'x — pomijam','warn'); return; }
-  if (isDeadHour()) { log('⚠️ Dead hour (01-05 UTC): '+sig.sym+' — pomijam','warn'); return; }
-  if (fg && fg.val < CFG.fgMin) {
-    if (fg.val < 15) { log('Fear&Greed='+fg.val+' ('+fg.label+') — ekstremalna panika, blokada','warn'); return; }
+  if (isDeadHour()) { log('Dead hour — size cut only','warn'); }
+  if (fg && fg.val < 10 && sig.finalProb < (CFG.minScore + 12)/100) {
+    log('Fear&Greed='+fg.val+' panic + low fp — skip','warn'); return;
+  }
+  if (false) {
+
     log('Fear&Greed='+fg.val+' ('+fg.label+') < '+CFG.fgMin+' — kara -10 do score','warn');
     sig = Object.assign({}, sig, { score: Math.max(0, sig.score - 10), finalProb: Math.max(0, sig.finalProb - 0.10) });
     if (sig.finalProb < (PAIR_PARAMS.get(sig.sym) ? PAIR_PARAMS.get(sig.sym).minScore : ADAPTIVE.getMinScore())/100) return;
