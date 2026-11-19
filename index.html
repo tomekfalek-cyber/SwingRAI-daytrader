@@ -2835,11 +2835,12 @@ async function botCycle() {
     // Pobierz balans raz przed pętlą — unikamy N zapytań API przy N sygnałach BUY
     const cachedTotal = await getTotal().catch(()=>0);
     const cachedUSDC  = CFG.mode==='paper' ? ST.paperBal : await getUSDC().catch(()=>0);
-    for (let i=0; i<sigs.length; i++) {
-      if (!sigs[i].buy) continue;
+    // Prefer highest finalProb longs first (daytrading ranking)
+    var longSigs = sigs.filter(function(s){ return s.buy; }).sort(function(a,b){ return b.finalProb - a.finalProb; });
+    for (let i=0; i<longSigs.length; i++) {
       if (ST.positions.length >= CFG.maxPos) break;
-      log('BUY SIGNAL '+sigs[i].sym+' score='+sigs[i].score+' fp='+(sigs[i].finalProb*100).toFixed(0)+'% — otwieram PAPER','ok');
-      await openTrade(sigs[i], fg, btcDrop, cachedTotal, cachedUSDC);
+      log('BUY SIGNAL '+longSigs[i].sym+' score='+longSigs[i].score+' fp='+(longSigs[i].finalProb*100).toFixed(0)+'% — otwieram PAPER','ok');
+      await openTrade(longSigs[i], fg, btcDrop, cachedTotal, cachedUSDC);
     }
     // SHORT — TYLKO symulacja w PAPER, dla statystyk/skutecznosci (Revolut X i tak
     // nie wykonuje realnych shortow, wiec w LIVE to nie ma zadnego sensu ani ryzyka).
