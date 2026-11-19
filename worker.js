@@ -25,13 +25,108 @@ const MIN_COST_COVERAGE_RATIO = 1.5; // daytrading: TP >= 1.5x round-trip cost /
 
 const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
 const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
-const BREAKEVEN_R = 1.0;         // po +1R SL → entry + fee buffer
-const PARTIAL_R = 1.15;          // partial 50% przy ~1.15R (zamiast 65% TP)
-const MAX_SPREAD_PCT = 0.003; // 0.30% — crypto spot, alty bywaja szersze // 0.25% — alty na RevX bywaja szersze   // 0.15% — powyzej: skip entry
+const BREAKEVEN_R = 0.9;         // BE nieco wczesniej — ochrona kapitalu daytrading
+const PARTIAL_R = 1.0;           // partial 40% at 1R
+const PARTIAL2_R = 1.8;          // second trim 30% at 1.8R, rest trails
+const MAX_SPREAD_PCT = 0.003; // 0.30%
 const DAILY_LOSS_LIMIT = 0.08;   // -8% equity dziennie → stop
 const COOLDOWN_SL_MS = 40 * 60000;      // 40 min po SL na pare
 const COOLDOWN_CONS3_MS = 90 * 60000;   // 90 min global po 3 stratach z rzedu
 const OB_FVG_MAX_AGE_BARS = 12;  // TTL Order Block / FVG na 15m (~3h)
+
+// ═══════════════════════════════════════════════════════════════
+// DAYTRADING QUALITY LAYER — max expectancy, not max trade count
+// ═══════════════════════════════════════════════════════════════
+const DT_MIN_RR = 1.4;              // reject setups with planned R:R below this
+const DT_MAX_TRADES_DAY = 8;        // anti-overtrade (crypto 24/7 still needs cap)
+const DT_DAILY_PROFIT_LOCK = 0.06;  // +6% day → no new risk (protect winners)
+const DT_CHOP_FP_BONUS = 0.10;      // chop entries need higher finalProb
+
+/** UTC session edge for crypto liquidity (not FX sessions — crypto peaks EU/US) */
+function sessionEdge() {
+  const h = new Date().getUTCHours();
+  if (h >= 13 && h < 21) return { mult: 1.15, label: 'EU/US overlap', q: 1.0 }; // best
+  if (h >= 7 && h < 13)  return { mult: 1.0,  label: 'EU open',       q: 0.85 };
+  if (h >= 21 || h < 1)  return { mult: 0.9,  label: 'US late/Asia',  q: 0.7 };
+  if (h >= 1 && h < 7)   return { mult: 0.7,  label: 'Asia thin',     q: 0.55 };
+  return { mult: 0.85, label: 'off-peak', q: 0.65 };
+}
+
+/** Classify setup type for TP/SL profile */
+function classifySetup(sig) {
+  const rsi = sig.rsiD, bb = sig.bbPos, trend = sig.trendD, macd = sig.macdHist;
+  // Mean-reversion: extreme RSI/BB against mild trend
+  if ((rsi <= 32 && bb < 0.2) || (rsi >= 68 && bb > 0.8)) return 'mean_rev';
+  // Momentum: trend + MACD aligned + RSI not extreme opposite
+  if (trend >= 1 && macd > 0 && rsi >= 45 && rsi <= 68) return 'momentum';
+  if (trend <= -1 && macd < 0 && rsi <= 55 && rsi >= 32) return 'momentum';
+  // Chop / unclear
+  if (sig.regime === 'sideways' || trend === 0) return 'chop';
+  return 'mixed';
+}
+
+/**
+ * Quality score 0-100 for ranking. Higher = take first.
+ * Separates "high raw score" from "good daytrade expectancy".
+ */
+function dayTradeQuality(sig) {
+  let q = 0;
+  const se = sessionEdge();
+  q += se.q * 20; // 0-20 session
+
+  const setup = sig.setupType || classifySetup(sig);
+  if (setup === 'momentum') q += 18;
+  else if (setup === 'mean_rev') q += 16;
+  else if (setup === 'mixed') q += 10;
+  else q += 4; // chop
+
+  // Edge from model confidence
+  const fp = sig.finalProb || 0;
+  if (sig.buy) q += Math.min(25, fp * 28);
+  if (sig.shortSignal) q += Math.min(25, (1 - fp) * 28);
+
+  // Timing gates
+  const g = sig.gates || {};
+  const gLong = [g.ctxLong, g.setupLong, g.triggerLong].filter(Boolean).length;
+  const gShort = [g.ctxShort, g.setupShort, g.triggerShort].filter(Boolean).length;
+  q += (sig.buy ? gLong : gShort) * 6; // 0-18
+
+  // Volume confirmation
+  if ((sig.volR || 0) >= 1.2) q += 8;
+  else if ((sig.volR || 0) >= 0.9) q += 4;
+  else if ((sig.volR || 0) < 0.5) q -= 6;
+
+  // Structure / SMC
+  const ev = (sig.smc && sig.smc.event) || '';
+  if (sig.buy && (ev === 'BOS_up' || ev === 'CHoCH_up')) q += 8;
+  if (sig.shortSignal && (ev === 'BOS_down' || ev === 'CHoCH_down')) q += 8;
+
+  // OBI
+  if (sig.buy && (sig.obiRatio || 0.5) >= 0.58) q += 5;
+  if (sig.shortSignal && (sig.obiRatio || 0.5) <= 0.42) q += 5;
+
+  // Penalize extended moves (chase)
+  if (sig.buy && (sig.mom5 || 0) > 6) q -= 8;
+  if (sig.shortSignal && (sig.mom5 || 0) < -6) q -= 8;
+
+  // Spread cost
+  if ((sig.spreadPct || 0) > 0.002) q -= 5;
+
+  return Math.max(0, Math.min(100, Math.round(q)));
+}
+
+function countTradesToday(state) {
+  const start = new Date(); start.setUTCHours(0,0,0,0);
+  const t0 = start.getTime();
+  return (state.trades || []).filter(t => (t.ts || 0) >= t0).length;
+}
+
+function dailyPnlPct(state, equity) {
+  if (!equity || equity <= 0) return 0;
+  const base = state.dailyStartBalance > 0 ? state.dailyStartBalance : equity;
+  return (state.dailyPnl || 0) / base;
+}
+
 
 const CORR_GROUPS = [
   ['XBTUSDT'],
@@ -498,7 +593,8 @@ async function runBotCycle(env) {
       patterns: (s.patterns||[]).map(p => p.name),
       aiMethod: s.aiMethod, regime: s.regime || 'neutral',
       macdHist: s.macdHist, bbPos: s.bbPos,
-      volR: s.volR, vol4R: s.vol4R, mom5: s.mom5, mom10: s.mom10
+      volR: s.volR, vol4R: s.vol4R, mom5: s.mom5, mom10: s.mom10,
+      quality: s.quality, setupType: s.setupType
     }));
 
     const dailyBase = state.dailyStartBalance > 0 ? state.dailyStartBalance : (cfg.paperBalance || 1000);
@@ -517,18 +613,32 @@ async function runBotCycle(env) {
     } else if ((state.drawdownBlock || 0) > Date.now()) {
       addLog(state, 'Circuit breaker aktywny â€” brak nowych pozycji', 'warn');
     } else {
-      for (const sig of sigs) {
-        if ((state.positions || []).length >= cfg.maxPos) break;
-        if (sig.buy) {
-          addLog(state, 'BUY SIGNAL ' + sig.sym + ' score=' + sig.score + ' fp=' + (sig.finalProb*100).toFixed(0) + '% — proba otwarcia', 'ok');
+      // Rank by dayTradeQuality — take best first (max expectancy)
+      const equityNow = cfg.mode === 'live'
+        ? (state.liveBalance > 0 ? state.liveBalance : (cfg.paperBalance || 1000))
+        : (state.paperBalance > 0 ? state.paperBalance : (cfg.paperBalance || 1000));
+      const tradesToday = countTradesToday(state);
+      const pnlDay = dailyPnlPct(state, equityNow);
+      if (tradesToday >= DT_MAX_TRADES_DAY) {
+        addLog(state, 'Max trades/day (' + DT_MAX_TRADES_DAY + ') — stop new entries', 'warn');
+      } else if (pnlDay >= DT_DAILY_PROFIT_LOCK) {
+        addLog(state, 'Daily profit lock +' + (pnlDay*100).toFixed(1) + '% — no new risk', 'ok');
+      } else {
+        const longs = sigs.filter(s => s.buy).sort((a, b) => (b.quality || 0) - (a.quality || 0));
+        const shorts = sigs.filter(s => s.shortSignal).sort((a, b) => (b.quality || 0) - (a.quality || 0));
+        for (const sig of longs) {
+          if ((state.positions || []).length >= cfg.maxPos) break;
+          if (countTradesToday(state) >= DT_MAX_TRADES_DAY) break;
+          addLog(state, 'BUY SIGNAL ' + sig.sym + ' Q=' + (sig.quality||0) + ' ' + (sig.setupType||'') + ' score=' + sig.score + ' fp=' + (sig.finalProb*100).toFixed(0) + '%', 'ok');
           await openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew);
         }
-      }
-      for (const sig of sigs) {
-        if ((state.positions || []).length >= cfg.maxPos) break;
-        if (sig.shortSignal) {
+        for (const sig of shorts) {
+          if ((state.positions || []).length >= cfg.maxPos) break;
+          if (countTradesToday(state) >= DT_MAX_TRADES_DAY) break;
+          addLog(state, 'SHORT SIGNAL ' + sig.sym + ' Q=' + (sig.quality||0) + ' ' + (sig.setupType||''), 'ok');
           await openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew);
         }
+      }
       }
     }
 
@@ -1192,15 +1302,32 @@ const shortSignal = scoreShort && stagedShort;
     rr: (Math.max(cfg.tp, atrD/price*1.8) / Math.max(cfg.sl, atrD/price*1.0)).toFixed(1)
   } : null;
 
+  const setupType = classifySetup({
+    rsiD: rsiD, bbPos: bbD.pos, trendD: trendD, macdHist: macdD.hist, regime: regime
+  });
+  const _gatesObj = {
+    ctxLong: ctxLong.pass, setupLong: setupLong.pass, triggerLong: triggerLong.pass,
+    ctxShort: ctxShort.pass, setupShort: setupShort.pass, triggerShort: triggerShort.pass
+  };
+  const quality = dayTradeQuality({
+    buy: buy, shortSignal: shortSignal, finalProb: finalProb, rsiD: rsiD, bbPos: bbD.pos,
+    trendD: trendD, macdHist: macdD.hist, volR: volR, mom5: mom5,
+    spreadPct: obiData.spreadPct, obiRatio: obiData.ratio, regime: regime,
+    setupType: setupType, gates: _gatesObj, smc: { event: structure.event }
+  });
+  if (buy && setupType === 'chop' && finalProb < (minScore / 100) + DT_CHOP_FP_BONUS) {
+    buy = false;
+    why.push('CHOP: fp za niski na daytrade w range');
+  }
+
   return {
     sym, price,
     rsiD: +rsiD.toFixed(1), rsi4h: +rsi4h.toFixed(1), rsi1h: +rsi1h.toFixed(1), confirm1h,
     macdHist: macdD.hist, macdLine: macdD.line,
     bbPos: bbD.pos, trendD, ema20, ema50, atrD,
     score, finalProb: +finalProb.toFixed(3), buy, shortSignal, shortLevels,
-    scoreBuy, scoreShort,
-    gates: { ctxLong: ctxLong.pass, setupLong: setupLong.pass, triggerLong: triggerLong.pass,
-              ctxShort: ctxShort.pass, setupShort: setupShort.pass, triggerShort: triggerShort.pass },
+    scoreBuy, scoreShort, setupType, quality,
+    gates: _gatesObj,
     nbPred, gbmProb: +gbmProb.toFixed(3), qlSugg, aiMethod,
     obiRatio: obiData.ratio || 0.5, obiScore, spreadPct: obiData.spreadPct,
     patterns: patResult.patterns,
@@ -1213,7 +1340,7 @@ const shortSignal = scoreShort && stagedShort;
       orderBlocks: orderBlocks.slice(-3), fvgs: fvgs.slice(-3),
       liqSweep, premiumDiscount: premDisc.zone, pdPct: +premDisc.pct.toFixed(3)
     },
-    levels: calcDynamicLevels(price, atrD, cfg, pp, obiData.spreadPct)
+    levels: calcDynamicLevels(price, atrD, cfg, pp, obiData.spreadPct, setupType)
   };
 }
 
@@ -1277,7 +1404,7 @@ async function checkPositions(cfg, state, env, ql) {
           pos.partialSellingAt = Date.now();
           pos.partialSelling = true;
           try {
-            const fillQty  = pos.qty / 2;
+            const fillQty  = pos.qty * 0.4;
             const fillPrice = price * (1 + SLIPPAGE_PAPER); // odkupujemy (buy-to-cover) â€” plac za nas
             const partialFeeCost = (pos.entry * fillQty) * FEE + (fillPrice * fillQty) * FEE;
             const realizedPnl = (pos.entry - fillPrice) * fillQty - partialFeeCost;
@@ -1348,7 +1475,7 @@ async function checkPositions(cfg, state, env, ql) {
       if (!reason && rMultiple >= PARTIAL_R && !pos.partialClosed && !pos.partialSelling) {
         pos.partialSellingAt = Date.now();
         pos.partialSelling = true;
-        const halfQtyReq = pos.qty / 2;
+        const halfQtyReq = pos.qty * 0.4; // scale-out 40% at 1R
         let fillPrice = price, fillQty = halfQtyReq;
         try {
           if (cfg.mode === 'live' && cfg.revxApiKey && cfg.revxPrivKey) {
@@ -1411,6 +1538,11 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   const rawMin = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore || 45);
   const effMinScore = Math.min(55, Math.max(38, rawMin));
 
+  // Quality floor — skip low-expectancy signals (unless very high fp)
+  if ((sig.quality || 0) < 35 && (sig.finalProb || 0) < 0.62) {
+    addLog(state, 'Quality ' + (sig.quality||0) + ' za niska na daytrade ' + sig.sym, 'warn'); return;
+  }
+
   const pumpReason = isPumpDump(sig);
   if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' — pomijam', 'warn'); return; }
   if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' — pomijam', 'warn'); return; }
@@ -1465,8 +1597,11 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   }
 
   const pp     = pp0;
-  const levels = calcDynamicLevels(adjSig.price, adjSig.atrD, cfg, pp, adjSig.spreadPct);
+  const levels = calcDynamicLevels(adjSig.price, adjSig.atrD, cfg, pp, adjSig.spreadPct, adjSig.setupType);
   const slPct  = (adjSig.price - levels.sl) / adjSig.price;
+  if (parseFloat(levels.rr) < DT_MIN_RR) {
+    addLog(state, 'R:R ' + levels.rr + ' < ' + DT_MIN_RR + ' — skip ' + sig.sym, 'warn'); return;
+  }
 
   const totalRoundTripCost = FEE * 2 + SLIPPAGE_PAPER * 2;
   const tpOffsetActual = (levels.tp - adjSig.price) / adjSig.price;
@@ -1480,7 +1615,8 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   let posSize = kellySize(cfg, state, total, slPct);
 
   // Session + dead-hour size (never hard-block entry)
-  posSize = Math.max(5, Math.round(posSize * sessionSizeMultiplier() * 100) / 100);
+  const se = sessionEdge();
+  posSize = Math.max(5, Math.round(posSize * sessionSizeMultiplier() * se.mult * 100) / 100);
   if (typeof deadHr !== 'undefined' && deadHr) {
     posSize = Math.max(5, Math.round(posSize * 0.55 * 100) / 100);
     addLog(state, 'Dead hour — size x0.55 (entry allowed)', 'warn');
@@ -1519,7 +1655,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     try {
       const res = await revxMarketBuy(adjSig.sym, posSize, cfg);
       const execP = res.price || adjSig.price;
-      const el    = calcDynamicLevels(execP, adjSig.atrD, cfg, pp, adjSig.spreadPct);
+      const el    = calcDynamicLevels(execP, adjSig.atrD, cfg, pp, adjSig.spreadPct, adjSig.setupType);
       newPos = buildPosition(adjSig, execP, res.qty, el, posSize, ql, 'LONG');
       state.positions.push(newPos);
       if (!state.dailyStartBalance || state.dailyStartBalance <= 0) {
@@ -1537,7 +1673,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   } else {
     const paperExecPrice = adjSig.price * (1 + SLIPPAGE_PAPER);
     const qty = posSize / paperExecPrice;
-    const paperLevels = calcDynamicLevels(paperExecPrice, adjSig.atrD, cfg, pp, adjSig.spreadPct);
+    const paperLevels = calcDynamicLevels(paperExecPrice, adjSig.atrD, cfg, pp, adjSig.spreadPct, adjSig.setupType);
     newPos = buildPosition(adjSig, paperExecPrice, qty, paperLevels, posSize, ql, 'LONG');
     state.positions.push(newPos);
     if (cfg.mode === 'paper') {
@@ -1689,8 +1825,10 @@ function buildPosition(sig, price, qty, levels, size, ql, side) {
     entryTs: Date.now(), score: sig.score, finalProb: sig.finalProb,
     aiMethod: sig.aiMethod, nbFeatures: sig.nbFeatures, gbmFeatures: sig.gbmFeatures,
     qlSig: sig.qlSig, gbmProb: sig.gbmProb, nbLabel: sig.nbPred ? sig.nbPred.label : 'NEUTRAL',
-    why: sig.why.join(', '), size, rr: levels.rr,
-    breakeven: false, partialClosed: false
+    why: (sig.why || []).join(', '), size, rr: levels.rr,
+    setupType: sig.setupType || levels.setupType || 'mixed',
+    quality: sig.quality || 0,
+    breakeven: false, partialClosed: false, partial2: false
   };
 }
 
