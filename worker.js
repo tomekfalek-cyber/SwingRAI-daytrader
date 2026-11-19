@@ -21,13 +21,13 @@ const FEE = 0.0009;
 const SLIPPAGE_PAPER = 0.0005;
 
 // FIX #3: Minimalny oczekiwany zysk netto (po kosztach) zanim otworzymy pozycje.
-const MIN_COST_COVERAGE_RATIO = 2.0; // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
+const MIN_COST_COVERAGE_RATIO = 1.5; // daytrading: TP >= 1.5x round-trip cost // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
 
 const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
 const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
 const BREAKEVEN_R = 1.0;         // po +1R SL → entry + fee buffer
 const PARTIAL_R = 1.15;          // partial 50% przy ~1.15R (zamiast 65% TP)
-const MAX_SPREAD_PCT = 0.0025; // 0.25% — alty na RevX bywaja szersze   // 0.15% — powyzej: skip entry
+const MAX_SPREAD_PCT = 0.003; // 0.30% — crypto spot, alty bywaja szersze // 0.25% — alty na RevX bywaja szersze   // 0.15% — powyzej: skip entry
 const DAILY_LOSS_LIMIT = 0.08;   // -8% equity dziennie → stop
 const COOLDOWN_SL_MS = 40 * 60000;      // 40 min po SL na pare
 const COOLDOWN_CONS3_MS = 90 * 60000;   // 90 min global po 3 stratach z rzedu
@@ -44,16 +44,16 @@ const CORR_GROUPS = [
 ];
 
 const PAIR_PARAMS_DEFAULT = {
-  // Day trading: nieco niższe progi niż swing (więcej setupów intraday, bramy 1H/15m/5m i tak filtrują)
-  'XBTUSDT':  { minScore:50 },
-  'ETHUSDT':  { minScore:48 },
-  'SOLUSDT':  { minScore:48 },
-  'XRPUSDT':  { minScore:48 },
-  'DOGEUSDT': { minScore:50 },
-  'ADAUSDT':  { minScore:48 },
-  'AVAXUSDT': { minScore:48 },
-  'LINKUSDT': { minScore:48 },
-  'PEPEUSDT': { tp:0.035, sl:0.018, minScore:52 }
+  // Daytrading thresholds — intraday flow (1H/15m/5m)
+  'XBTUSDT':  { minScore:46 },
+  'ETHUSDT':  { minScore:45 },
+  'SOLUSDT':  { minScore:44 },
+  'XRPUSDT':  { minScore:44 },
+  'DOGEUSDT': { minScore:46 },
+  'ADAUSDT':  { minScore:44 },
+  'AVAXUSDT': { minScore:44 },
+  'LINKUSDT': { minScore:44 },
+  'PEPEUSDT': { tp:0.03, sl:0.015, minScore:48 }
 };
 
 const REVX_BASE = 'https://revx.revolut.com/api/1.0';
@@ -504,14 +504,15 @@ async function runBotCycle(env) {
     const dailyBase = state.dailyStartBalance > 0 ? state.dailyStartBalance : (cfg.paperBalance || 1000);
     const dailyLossOk = (state.dailyPnl || 0) > -DAILY_LOSS_LIMIT * dailyBase;
 
-    const blockReason = fg.val < 15 ? 'F&G=' + fg.val + ' ekstremalna panika'
-      : !dailyLossOk ? 'dzienny limit strat -8%'
+    const blockReason = !dailyLossOk ? 'dzienny limit strat -8%'
       : (state.drawdownBlock || 0) > Date.now() ? 'circuit breaker'
       : null;
 
-    if (fg.val < 15) {
-      addLog(state, 'F&G=' + fg.val + ' (ekstremalna panika) â€” blokada BUY', 'warn');
-    } else if (!dailyLossOk) {
+    if (fg.val < 10) {
+      addLog(state, 'F&G=' + fg.val + ' panic — LONG tylko high-conviction', 'warn');
+    }
+    if (!dailyLossOk) {
+
       addLog(state, 'Dzienny limit strat przekroczony (-5% od $' + dailyBase.toFixed(0) + ')', 'err');
     } else if ((state.drawdownBlock || 0) > Date.now()) {
       addLog(state, 'Circuit breaker aktywny â€” brak nowych pozycji', 'warn');
@@ -569,7 +570,7 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
     const learnedPairParams = {};
     for (const sym of PAIRS) {
       const symTrades = trades.filter(t => t.sym === sym).slice(0, 30);
-      const base = (PAIR_PARAMS_DEFAULT[sym] && PAIR_PARAMS_DEFAULT[sym].minScore) || 62;
+      const base = (PAIR_PARAMS_DEFAULT[sym] && PAIR_PARAMS_DEFAULT[sym].minScore) || 45;
       if (symTrades.length < 10) {
         learnedPairParams[sym] = PAIR_PARAMS_DEFAULT[sym] || { minScore: base };
         continue;
@@ -578,10 +579,10 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
       // wr=0.50 â†’ adj=0; wr=0.30 â†’ +4; wr=0.70 â†’ -4
       const adj = Math.round((0.5 - wr) * 20);
       const newMin = Math.max(base - 6, Math.min(base + 6, base + adj));
-      learnedPairParams[sym] = Object.assign({}, PAIR_PARAMS_DEFAULT[sym] || {}, { minScore: newMin });
+      learnedPairParams[sym] = Object.assign({}, PAIR_PARAMS_DEFAULT[sym] || {}, { minScore: Math.min(55, Math.max(38, newMin)) });
     }
     state.pairParams = learnedPairParams;
-    state.adaptiveMinScore = computeAdaptiveMinScore(trades, cfg.minScore);
+    state.adaptiveMinScore = Math.min(55, Math.max(38, computeAdaptiveMinScore(trades, cfg.minScore || 45)));
 
     if (cfg.mode === 'live' && cfg.revxApiKey && cfg.revxPrivKey) {
       try {
@@ -1127,65 +1128,64 @@ if (nb.trained && gbm.trained) {
   // === NOWY KOD: ODDZIELNA LOGIKA DLA LONG I SHORT ===
   let scoreBuy = false, scoreShort = false;
 
-  // STRATEGIA DLA LONG (TRENDOWANIE W GĂ“RÄ) + SHORT W KOREKCIE TRENDU BYCZEGO
-// scoreBuy: daytrading — long gdy nie-bear i finalProb >= prog.
-// Confluence SMC jest BONUSEM, nie twardym wymogiem (wczesniej zero trade'ow).
-if (trendD >= 0) {
-  const longConfluence = [
-    rsiD <= 55, bbD.pos < 0.45, macdD.hist > 0, volR > 0.9,
-    divD.bull, structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
-    nearBullOB || (liqSweep && liqSweep.type === 'bullish')
-  ].filter(Boolean).length;
-  const longThreshold = minScore / 100;
-  // Wystarczy prog + brak bearBias. Confluence>=1 preferowane, ale przy score
-  // powyzej progu +5 nie blokujemy (inaczej bot nie handluje w trendzie).
-  const confOk = longConfluence >= 1 || finalProb >= (minScore + 5) / 100;
-  scoreBuy = finalProb >= longThreshold && confOk && !bearBias;
-  if (scoreBuy) why.push('scoreBuy OK (conf=' + longConfluence + ', fp=' + (finalProb*100).toFixed(0) + ')');
+// ═══════════════════════════════════════════════════════════
+// DAYTRADING ENTRY ENGINE (symmetric, no swing residue)
+// Score is long-oriented by construction: HIGH → long, LOW → short.
+// Previous bug: many post-score filters killed longs only → 3 buys / 2 months.
+// ═══════════════════════════════════════════════════════════
 
-  if (rsiD > 62 && bbD.pos > 0.75 && !bullBias && marketRegime !== 'strong_bull') {
-    const shortConfluence = [divD.bear, volR > 1.2, structure.event === 'CHoCH_down', macdD.hist < 0].filter(Boolean).length;
-    scoreShort = finalProb <= (100 - minScore) / 100 && shortConfluence >= 1 && !bullBias;
-  }
-}
-if (trendD <= -1) {
-  const shortConfluence = [rsiD >= 50, bbD.pos > 0.55, divD.bear, volR > 1.0, macdD.hist < 0].filter(Boolean).length;
-  scoreShort = finalProb <= (100 - minScore) / 100 && shortConfluence >= 1 && !bullBias;
-}
+const longThreshold = minScore / 100;
+const shortThreshold = 1 - longThreshold; // e.g. min 45 → short needs fp <= 0.55
 
+// --- LONG ---
+// Allow longs in flat and mild bull. Mean-reversion long allowed in mild bear if deeply OS.
+const hardBear = (trendD === -1 && rsiD > 55 && macdD.hist < 0);
+const longConfluence = [
+  rsiD <= 58, bbD.pos < 0.50, macdD.hist > 0, volR > 0.85,
+  divD.bull || div4h.bull,
+  structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
+  nearBullOB || (liqSweep && liqSweep.type === 'bullish'),
+  price > ema20 || price > ema50
+].filter(Boolean).length;
+
+const trendAllowsLong = trendD >= 0 || (trendD === -1 && rsiD <= 38 && (divD.bull || bbD.pos < 0.25));
+scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && longConfluence >= 1;
+// High conviction: skip confluence requirement
+if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold + 0.08) scoreBuy = true;
+if (scoreBuy) why.push('LONG candidate conf=' + longConfluence + ' fp=' + (finalProb*100).toFixed(0));
+
+// --- SHORT (stricter — was dominating because longs were over-filtered downstream) ---
+const shortConfluence = [
+  rsiD >= 55, bbD.pos > 0.55, macdD.hist < 0, volR > 0.9,
+  divD.bear || div4h.bear,
+  structure.event === 'BOS_down' || structure.event === 'CHoCH_down',
+  nearBearOB || (liqSweep && liqSweep.type === 'bearish'),
+  price < ema20 || price < ema50
+].filter(Boolean).length;
+const trendAllowsShort = trendD <= 0;
+scoreShort = trendAllowsShort && finalProb <= shortThreshold && shortConfluence >= 2 && !bullBias;
+if (scoreShort) why.push('SHORT candidate conf=' + shortConfluence + ' fp=' + (finalProb*100).toFixed(0));
+
+// --- TIMING GATES (1H ctx / 15m setup / 5m trigger) ---
 const ctxLong     = buildContextGate(trendD, 'LONG');
-  const setupLong   = buildSetupGate(h4, 'LONG');
-  const triggerLong = buildTriggerGate(h1, 'LONG');
-  // Daytrading: 2 z 3 bramek wystarczy (nie wszystkie 3). Przy bardzo wysokim
-  // score (>= minScore+12) wystarczy SETUP+TRIGGER albo KONTEKST+TRIGGER.
-  const gatesPass = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
-  const stagedLong = gatesPass >= 1;
-  if (scoreBuy && !stagedLong) {
-    why.push('Filtr timing: 0/3 bramek (ctx/setup/trigger)');
-  } else if (scoreBuy && gatesPass === 1) {
-    why.push('Timing: 1/3 bramek — daytrading entry OK');
-  }
+const setupLong   = buildSetupGate(h4, 'LONG');
+const triggerLong = buildTriggerGate(h1, 'LONG');
+const gatesLong   = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
+// Daytrading: 1 gate enough; high conviction can pass with 0 gates if fp very high
+const stagedLong  = gatesLong >= 1 || (scoreBuy && finalProb >= longThreshold + 0.12);
+if (scoreBuy && !stagedLong) why.push('LONG timing fail 0/3 gates');
 
+const ctxShort     = buildContextGate(trendD, 'SHORT');
+const setupShort   = buildSetupGate(h4, 'SHORT');
+const triggerShort = buildTriggerGate(h1, 'SHORT');
+const gatesShort   = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
+const stagedShort  = gatesShort >= 2; // shorts need tighter timing
+if (scoreShort && !stagedShort) why.push('SHORT timing fail <2/3 gates');
 
-  const ctxShort     = buildContextGate(trendD, 'SHORT');
-  const setupShort   = buildSetupGate(h4, 'SHORT');
-  const triggerShort = buildTriggerGate(h1, 'SHORT');
-  const gatesShort = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
-  const stagedShort = gatesShort >= 2;
-  if (scoreShort && !stagedShort) {
-    why.push((!ctxShort.pass ? ctxShort.reason : !setupShort.pass ? setupShort.reason : triggerShort.reason) || 'Filtr SHORT: <2/3 bramek');
-  }
+let buy = scoreBuy && stagedLong;
+// No sideways/premium hard-block — score already penalizes premium
 
-  // Sideways: long tylko w discount (twardszy gate)
-  let buy = scoreBuy && stagedLong;
-  // Sideways + premium: nie hard-block — tylko kara / wyzszy prog (juz w score).
-  // Hard-reject przy wysokim score zabijal daytrading w range.
-  if (buy && regime === 'sideways' && premDisc.zone === 'premium' && finalProb < (minScore + 8) / 100) {
-    buy = false;
-    why.push('Sideways+premium: score za niski na long poza discount');
-  }
-
-  const shortSignal = scoreShort && stagedShort;
+const shortSignal = scoreShort && stagedShort;
   const shortLevels = shortSignal ? {
     tp: price * (1 - Math.max(cfg.tp, atrD/price*1.8)),
     sl: price * (1 + Math.max(cfg.sl, atrD/price*1.0)),
@@ -1397,6 +1397,8 @@ async function checkPositions(cfg, state, env, ql) {
 }
 
 async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
+  // Daytrading LONG execution — filters must NOT be stricter than SHORT path
+  // (previous asymmetry: longs had F&G re-score kill, dead-hour hard block, tight BTC gates)
   if ((state.positions||[]).some(p => p.sym === sig.sym)) return;
   if (((state.cooldown || {})[sig.sym] || 0) > Date.now()) {
     addLog(state, 'Cooldown ' + sig.sym, 'warn'); return;
@@ -1405,19 +1407,24 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'Globalna blokada aktywna', 'warn'); return;
   }
   const pp0 = (state.pairParams||{})[sig.sym] || PAIR_PARAMS_DEFAULT[sig.sym];
-  const effMinScore = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore);
-  const pumpReason = isPumpDump(sig);
-  if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' â€” pomijam', 'warn'); return; }
-  if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' vol=' + sig.volR.toFixed(2) + 'x â€” pomijam', 'warn'); return; }
-  if (isDeadHour()) { addLog(state, 'Dead hour (02-05 UTC): ' + sig.sym + ' â€” pomijam', 'warn'); return; }
+  // Cap learned minScore — never allow swing-level thresholds from pairParams/adaptive
+  const rawMin = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore || 45);
+  const effMinScore = Math.min(55, Math.max(38, rawMin));
 
-  if (btcDrop && sig.sym !== 'XBTUSDT') {
-    addLog(state, 'BTC Guard 24h: pomijam ' + sig.sym, 'warn'); return;
-  }
-  // BTC 1H bear gate dla alt-longow
+  const pumpReason = isPumpDump(sig);
+  if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' — pomijam', 'warn'); return; }
+  if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' — pomijam', 'warn'); return; }
+
+  // Dead hour: only soft (size cut later) — do NOT hard-block daytrading paper/live
+  const deadHr = isDeadHour();
+
+  // BTC crash gate — only extreme dumps, BTC itself always allowed
   const bi = state.btcInfo || {};
-  if (bi.bear1h && sig.sym !== 'XBTUSDT') {
-    addLog(state, 'BTC 1H ' + (bi.change1h || 0).toFixed(2) + '%: pomijam alt LONG ' + sig.sym, 'warn'); return;
+  if (btcDrop && sig.sym !== 'XBTUSDT' && (bi.change24h || 0) < -5.5) {
+    addLog(state, 'BTC Guard 24h extreme: pomijam alt LONG ' + sig.sym, 'warn'); return;
+  }
+  if (bi.bear1h && sig.sym !== 'XBTUSDT' && (bi.change1h || 0) <= -4.5) {
+    addLog(state, 'BTC 1H ' + (bi.change1h||0).toFixed(2) + '%: pomijam alt LONG ' + sig.sym, 'warn'); return;
   }
 
   if (corrBlocked(sig.sym, state)) return;
@@ -1426,12 +1433,12 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'Spread ' + (sig.spreadPct * 100).toFixed(3) + '% > max: pomijam ' + sig.sym, 'warn'); return;
   }
 
+  // F&G: NEVER kill a signal that already passed scoreBuy — only size/risk later
   let adjSig = sig;
-  if (fg.val < cfg.fgMin) {
-    const newProb = Math.max(0, sig.finalProb - 0.10);
-    adjSig = Object.assign({}, sig, { finalProb: newProb, score: Math.max(0, sig.score - 10) });
-    if (adjSig.finalProb < effMinScore / 100) {
-      addLog(state, 'F&G=' + fg.val + ' â€” po karze za slaby score pomijam ' + sig.sym, 'warn'); return;
+  if (fg.val < 10) {
+    // extreme panic only: require higher conviction
+    if (sig.finalProb < (effMinScore + 12) / 100) {
+      addLog(state, 'F&G=' + fg.val + ' panic — fp za niski na LONG', 'warn'); return;
     }
   }
 
@@ -1472,14 +1479,18 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
 
   let posSize = kellySize(cfg, state, total, slPct);
 
-  // Session size mult (nizsza plynnosc = mniejszy size)
+  // Session + dead-hour size (never hard-block entry)
   posSize = Math.max(5, Math.round(posSize * sessionSizeMultiplier() * 100) / 100);
+  if (typeof deadHr !== 'undefined' && deadHr) {
+    posSize = Math.max(5, Math.round(posSize * 0.55 * 100) / 100);
+    addLog(state, 'Dead hour — size x0.55 (entry allowed)', 'warn');
+  }
 
-  // F&G extreme fear → -40% size (nie tylko score)
-  if (fg.val < 20) {
-    posSize = Math.max(5, Math.round(posSize * 0.6 * 100) / 100);
-    addLog(state, 'F&G=' + fg.val + ' extreme fear — size x0.6', 'warn');
-  } else if (fg.val < cfg.fgMin) {
+  // F&G: size only, never kill signal
+  if (fg.val < 15) {
+    posSize = Math.max(5, Math.round(posSize * 0.55 * 100) / 100);
+    addLog(state, 'F&G=' + fg.val + ' fear — size x0.55', 'warn');
+  } else if (fg.val < 25) {
     posSize = Math.max(5, Math.round(posSize * 0.75 * 100) / 100);
   }
 
@@ -1986,8 +1997,9 @@ function isPumpDump(sig) {
 }
 
 function isVolumeAnomaly(sig, effMinScore) {
-  if (sig.volR < 0.35) return true;
-  if (sig.score >= (effMinScore || 62) && sig.vol4R < 0.3) return true;
+  // Daytrading: only block truly dead books
+  if (sig.volR < 0.22) return true;
+  if (sig.score >= (effMinScore || 45) && sig.vol4R < 0.18) return true;
   return false;
 }
 
@@ -2024,11 +2036,11 @@ async function btcDropGuard() {
       }
     } catch (_) {}
     return {
-      drop: pct < -4,
-      pump: pct > 4,
+      drop: pct < -5.5,
+      pump: pct > 5.5,
       change24h: pct,
       change1h,
-      bear1h: change1h <= -3.0 // hard gate alt-long gdy BTC -2%/1H
+      bear1h: change1h <= -4.5 // hard gate alt-long gdy BTC -2%/1H
     };
   } catch(e) { return { drop: false, pump: false, change24h: 0, change1h: 0, bear1h: false }; }
 }
@@ -2118,11 +2130,12 @@ function calcDynamicLevels(price, atrD, cfg, pp, spreadPct) {
 }
 
 function computeAdaptiveMinScore(trades, baseMin) {
-  if (!trades || trades.length < 10) return baseMin;
-  const recent = trades.slice(0, 20);
+  // Daytrading: never climb into swing territory (60-75). Cap at baseMin+4, floor baseMin-6.
+  if (!trades || trades.length < 12) return baseMin;
+  const recent = trades.slice(0, 25);
   const winRate = recent.filter(t => t.pnl > 0).length / recent.length;
-  if (winRate < 0.4) return Math.min(75, baseMin + 5);
-  if (winRate > 0.65) return Math.max(50, baseMin - 3);
+  if (winRate < 0.38) return Math.min(baseMin + 4, 55);
+  if (winRate > 0.60) return Math.max(baseMin - 6, 38);
   return baseMin;
 }
 
@@ -2850,7 +2863,7 @@ function defaultConfig() {
     active: false, mode: 'paper',
     tp: 0.02, sl: 0.01, trail: 0.008,
     maxPos: 3, posSize: 12, riskPct: 1.25, // daytrading: mniej pozycji, mniejsze ryzyko
-    paperBalance: 1000, minScore: 48, fgMin: 12,
+    paperBalance: 1000, minScore: 45, fgMin: 10,
     revxApiKey: '', revxPrivKey: '',
     tgToken: '', tgChat: ''
   };
@@ -2865,7 +2878,7 @@ function defaultState() {
     lastCycle: null, lastFG: { val: 50, label: 'Neutral', ts: 0 },
     lastSigs: [],
     nb: null, gbm: null, ql: null, ensembleW: null,
-    pairParams: {}, adaptiveMinScore: 48,
+    pairParams: {}, adaptiveMinScore: 45,
     peakBalance: 0, peakBalanceMode: 'paper',
     drawdownBlock: 0, stats: null,
     lastGbmRefit: 0,
