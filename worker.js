@@ -1103,8 +1103,10 @@ async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adapti
   const nearBullFVG = fvgs.filter(g=>g.type==='bullish').some(g => price >= g.bottom && price <= g.top);
   if (nearBullFVG) { score += 6; why.push('SMC: Cena wypelnia bull FVG'); }
 
-  if (premDisc.zone === 'discount') { score += 6; why.push('SMC: Strefa discount (' + (premDisc.pct*100).toFixed(0) + '%)'); }
-  else                                { score -= 4; why.push('SMC: Strefa premium (' + (premDisc.pct*100).toFixed(0) + '%) - mniej atrakcyjne dla longa'); }
+  // Score jest long-oriented; NIE karz premium -4 (to sztucznie pchało finalProb w short).
+  // Kierunek rozstrzygają progi LONG/SHORT + confluence, nie kara score.
+  if (premDisc.zone === 'discount') { score += 4; why.push('SMC: Strefa discount (' + (premDisc.pct*100).toFixed(0) + '%)'); }
+  else if (premDisc.zone === 'premium') { why.push('SMC: Strefa premium (' + (premDisc.pct*100).toFixed(0) + '%) — ostrożny long / możliwy short MR'); }
 
   if (volR > 1.8 || vol4R > 2.0) { score += 5; why.push('Vol spike x' + Math.max(volR,vol4R).toFixed(1)); }
   else if (volR < 0.4)            { score -= 8; why.push('Niski wolumen'); }
@@ -1264,16 +1266,20 @@ scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && longCon
 if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold + 0.08) scoreBuy = true;
 if (scoreBuy) why.push('LONG candidate conf=' + longConfluence + ' fp=' + (finalProb*100).toFixed(0));
 
-// --- SHORT (stricter — was dominating because longs were over-filtered downstream) ---
+// --- SHORT (symetrycznie do LONG) ---
+const hardBull = (trendD === 1 && rsiD < 45 && macdD.hist > 0);
 const shortConfluence = [
-  rsiD >= 55, bbD.pos > 0.55, macdD.hist < 0, volR > 0.9,
+  rsiD >= 42, bbD.pos > 0.50, macdD.hist < 0, volR > 0.85,
   divD.bear || div4h.bear,
   structure.event === 'BOS_down' || structure.event === 'CHoCH_down',
   nearBearOB || (liqSweep && liqSweep.type === 'bearish'),
   price < ema20 || price < ema50
 ].filter(Boolean).length;
-const trendAllowsShort = trendD <= 0;
-scoreShort = trendAllowsShort && finalProb <= shortThreshold && shortConfluence >= 2 && !bullBias;
+// Mirror longa: short w flat/bear; w mild bull tylko przy wyraźnym OB
+const trendAllowsShort = trendD <= 0 || (trendD === 1 && rsiD >= 62 && (divD.bear || bbD.pos > 0.75));
+scoreShort = trendAllowsShort && finalProb <= shortThreshold && !hardBull && shortConfluence >= 1 && !bullBias;
+// High conviction short
+if (!scoreShort && trendAllowsShort && !hardBull && !bullBias && finalProb <= shortThreshold - 0.08) scoreShort = true;
 if (scoreShort) why.push('SHORT candidate conf=' + shortConfluence + ' fp=' + (finalProb*100).toFixed(0));
 
 // --- TIMING GATES (1H ctx / 15m setup / 5m trigger) ---
@@ -1289,13 +1295,20 @@ const ctxShort     = buildContextGate(trendD, 'SHORT');
 const setupShort   = buildSetupGate(h4, 'SHORT');
 const triggerShort = buildTriggerGate(h1, 'SHORT');
 const gatesShort   = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
-const stagedShort  = gatesShort >= 2; // shorts need tighter timing
-if (scoreShort && !stagedShort) why.push('SHORT timing fail <2/3 gates');
+// Daytrading: 1 gate jak LONG (wcześniej short wymagał 2/3 → inna asymetria)
+const stagedShort  = gatesShort >= 1 || (scoreShort && finalProb <= shortThreshold - 0.12);
+if (scoreShort && !stagedShort) why.push('SHORT timing fail 0/3 gates');
 
 let buy = scoreBuy && stagedLong;
-// No sideways/premium hard-block — score already penalizes premium
+let shortSignal = scoreShort && stagedShort;
 
-const shortSignal = scoreShort && stagedShort;
+// Mutually exclusive: nie LONG i SHORT naraz — wybierz większą przewagę vs 0.5
+if (buy && shortSignal) {
+  const longEdge = finalProb - 0.5;
+  const shortEdge = 0.5 - finalProb;
+  if (longEdge >= shortEdge) { shortSignal = false; why.push('Conflict: wybór LONG (większy edge)'); }
+  else { buy = false; why.push('Conflict: wybór SHORT (większy edge)'); }
+}
   const shortLevels = shortSignal ? {
     tp: price * (1 - Math.max(cfg.tp, atrD/price*1.8)),
     sl: price * (1 + Math.max(cfg.sl, atrD/price*1.0)),
@@ -1315,9 +1328,17 @@ const shortSignal = scoreShort && stagedShort;
     spreadPct: obiData.spreadPct, obiRatio: obiData.ratio, regime: regime,
     setupType: setupType, gates: _gatesObj, smc: { event: structure.event }
   });
-  if (buy && setupType === 'chop' && finalProb < (minScore / 100) + DT_CHOP_FP_BONUS) {
-    buy = false;
-    why.push('CHOP: fp za niski na daytrade w range');
+  // CHOP: ten sam próg dla LONG i SHORT (wcześniej tylko long był ucinany)
+  const chopFloor = (minScore / 100) + DT_CHOP_FP_BONUS;
+  if (setupType === 'chop') {
+    if (buy && finalProb < chopFloor) {
+      buy = false;
+      why.push('CHOP: fp za niski na LONG w range');
+    }
+    if (shortSignal && (1 - finalProb) < chopFloor) {
+      shortSignal = false;
+      why.push('CHOP: fp za niski na SHORT w range');
+    }
   }
 
   return {
