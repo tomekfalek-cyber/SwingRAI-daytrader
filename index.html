@@ -1602,8 +1602,8 @@ async function analyzeSwing(sym) {
   const nearBullFVG = fvgs.filter(function(g){return g.type==='bullish';}).some(function(g){ return price >= g.bottom && price <= g.top; });
   if (nearBullFVG) { score += 6; why.push('SMC: Cena wypelnia bull FVG'); }
 
-  if (premDisc.zone === 'discount') { score += 6; why.push('SMC: Strefa discount (' + (premDisc.pct*100).toFixed(0) + '%)'); }
-  else                                { score -= 4; why.push('SMC: Strefa premium (' + (premDisc.pct*100).toFixed(0) + '%) - mniej atrakcyjne dla longa'); }
+  if (premDisc.zone === 'discount') { score += 4; why.push('SMC: Strefa discount (' + (premDisc.pct*100).toFixed(0) + '%)'); }
+  else if (premDisc.zone === 'premium') { why.push('SMC: Strefa premium — ostrożny long / możliwy short MR'); }
 
   // VWAP scoring
   if (price > vwap4h) { score += 8;  why.push('Ponad VWAP 15m'); }
@@ -1736,13 +1736,15 @@ async function analyzeSwing(sym) {
 
   const levels = calcDynamicLevels(price, atrD, FEE, pairP);
   const shortConfluence2 = [
-    rsiD >= 55, bbD.pos > 0.55, macdD.hist < 0, volR > 0.9,
+    rsiD >= 42, bbD.pos > 0.50, macdD.hist < 0, volR > 0.85,
     divD.bear || div4h.bear,
     structure.event === 'BOS_down' || structure.event === 'CHoCH_down',
     nearBearOB || (liqSweep && liqSweep.type === 'bearish')
   ].filter(Boolean).length;
-  const trendAllowsShort = trendD <= 0;
-  const scoreShort = trendAllowsShort && finalProb <= shortThreshold && shortConfluence2 >= 2 && !bullBias;
+  const hardBull = (trendD === 1 && rsiD < 45 && macdD.hist > 0);
+  const trendAllowsShort = trendD <= 0 || (trendD === 1 && rsiD >= 62 && (divD.bear || bbD.pos > 0.75));
+  let scoreShort = trendAllowsShort && finalProb <= shortThreshold && !hardBull && shortConfluence2 >= 1 && !bullBias;
+  if (!scoreShort && trendAllowsShort && !hardBull && !bullBias && finalProb <= shortThreshold - 0.08) scoreShort = true;
   if (scoreShort) why.push('SHORT candidate conf=' + shortConfluence2);
 
   const ctxLong     = buildContextGate(trendD, 'LONG');
@@ -1756,11 +1758,15 @@ async function analyzeSwing(sym) {
   const setupShort   = buildSetupGate(h4, 'SHORT');
   const triggerShort = buildTriggerGate(h1, 'SHORT');
   const gatesShort = [ctxShort.pass, setupShort.pass, triggerShort.pass].filter(Boolean).length;
-  const stagedShort  = gatesShort >= 2;
-  if (scoreShort && !stagedShort) why.push('SHORT timing <2/3');
+  const stagedShort  = gatesShort >= 1 || (scoreShort && finalProb <= shortThreshold - 0.12);
+  if (scoreShort && !stagedShort) why.push('SHORT timing 0/3');
 
-  const buy         = scoreBuy && stagedLong;
-  const shortSignal = scoreShort && stagedShort;
+  let buy         = scoreBuy && stagedLong;
+  let shortSignal = scoreShort && stagedShort;
+  if (buy && shortSignal) {
+    if ((finalProb - 0.5) >= (0.5 - finalProb)) { shortSignal = false; why.push('Conflict→LONG'); }
+    else { buy = false; why.push('Conflict→SHORT'); }
+  }
   const shortLevels = shortSignal ? {
     tp: price * (1 - Math.max(CFG.tp, atrD/price*3.0)),
     sl: price * (1 + Math.max(CFG.sl, atrD/price*1.5)),
