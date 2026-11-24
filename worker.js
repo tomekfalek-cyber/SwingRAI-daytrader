@@ -21,7 +21,7 @@ const FEE = 0.0009;
 const SLIPPAGE_PAPER = 0.0005;
 
 // FIX #3: Minimalny oczekiwany zysk netto (po kosztach) zanim otworzymy pozycje.
-const MIN_COST_COVERAGE_RATIO = 1.5; // daytrading: TP >= 1.5x round-trip cost // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
+const MIN_COST_COVERAGE_RATIO = 1.2; // daytrading: TP >= 1.5x round-trip cost // daytrading: TP musi pokryc min 2.5x koszt rundy (fee+slip)
 
 const TIMEOUT_MS = 8 * 3600000; // hard limit 8h
 const TIME_STOP_MS = 105 * 60000; // 105 min — martwy setup (brak progressu)
@@ -31,7 +31,7 @@ const PARTIAL2_R = 1.8;          // second trim 30% at 1.8R, rest trails
 const MAX_SPREAD_PCT = 0.003; // 0.30%
 const DAILY_LOSS_LIMIT = 0.08;   // -8% equity dziennie → stop
 const COOLDOWN_SL_MS = 40 * 60000;      // 40 min po SL na pare
-const COOLDOWN_CONS3_MS = 90 * 60000;   // 90 min global po 3 stratach z rzedu
+const COOLDOWN_CONS3_MS = 30 * 60000; // 30 min (było 90) — daytrade crypto   // 90 min global po 3 stratach z rzedu
 const OB_FVG_MAX_AGE_BARS = 12;  // TTL Order Block / FVG na 15m (~3h)
 
 // ═══════════════════════════════════════════════════════════════
@@ -626,6 +626,10 @@ async function runBotCycle(env) {
       } else {
         const longs = sigs.filter(s => s.buy).sort((a, b) => (b.quality || 0) - (a.quality || 0));
         const shorts = sigs.filter(s => s.shortSignal).sort((a, b) => (b.quality || 0) - (a.quality || 0));
+        if (!longs.length && !shorts.length) {
+          const near = (sigs || []).filter(s => s.scoreBuy || s.scoreShort).length;
+          addLog(state, 'Brak wejść: 0 buy/shortSignal (nearMiss kandydatów: ' + near + '/' + (sigs||[]).length + ')', 'warn');
+        }
         for (const sig of longs) {
           if ((state.positions || []).length >= cfg.maxPos) break;
           if (countTradesToday(state) >= DT_MAX_TRADES_DAY) break;
@@ -1559,8 +1563,8 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   const rawMin = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore || 45);
   const effMinScore = Math.min(55, Math.max(38, rawMin));
 
-  // Quality floor — skip low-expectancy signals (unless very high fp)
-  if ((sig.quality || 0) < 35 && (sig.finalProb || 0) < 0.62) {
+  // Quality floor (daytrade): nie blokuj umiarkowanych setupów — wcześniej 35/0.62 zabijało prawie wszystko
+  if ((sig.quality || 0) < 28 && (sig.finalProb || 0) < 0.55) {
     addLog(state, 'Quality ' + (sig.quality||0) + ' za niska na daytrade ' + sig.sym, 'warn'); return;
   }
 
@@ -1611,8 +1615,8 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
       return s + (p.size||0) * slPct;
     }, 0);
     const portfolioHeat = totalRisk / (total > 0 ? total : 1);
-    if (portfolioHeat > 0.06) {
-      addLog(state, 'Portfolio heat >6% â€” blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
+    if (portfolioHeat > 0.08) {
+      addLog(state, 'Portfolio heat >8% â€” blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
       return;
     }
   }
@@ -1737,7 +1741,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
   const pumpReason = isPumpDump(sig);
   if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' â€” pomijam SHORT', 'warn'); return; }
   if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' vol=' + sig.volR.toFixed(2) + 'x â€” pomijam SHORT', 'warn'); return; }
-  if (isDeadHour()) { addLog(state, 'Dead hour (02-05 UTC): ' + sig.sym + ' â€” pomijam SHORT', 'warn'); return; }
+  if (isDeadHour()) { addLog(state, 'Dead hour (02-05 UTC): ' + sig.sym + ' — SHORT z mniejszym size (soft)', 'warn'); }
 
   if (btcInfo.pump && sig.sym !== 'XBTUSDT') {
     addLog(state, 'BTC Guard (pump): pomijam SHORT ' + sig.sym, 'warn'); return;
