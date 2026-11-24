@@ -2034,27 +2034,27 @@ function buildEntryJournalEntry(sig, pos, cfg) {
   lines.push('Score: ' + sig.score + '/100 | Pewnosc: ' + (sig.finalProb*100).toFixed(1) + '% | Metoda: ' + sig.aiMethod);
   lines.push('');
   lines.push('POWODY WEJSCIA:');
-  for (const w of (sig.why || []).slice(0, 8)) lines.push('  â€˘ ' + w);
+  for (const w of (sig.why || []).slice(0, 8)) lines.push('  • ' + w);
   lines.push('');
   lines.push('FILTR KONTEKST/SETUP/TRIGGER:');
   const g = sig.gates || {};
   if (isShort) {
-    lines.push('  â€˘ KONTEKST 1H: ' + (g.ctxShort ? 'OK (trend bear)' : 'brak'));
-    lines.push('  â€˘ SETUP 15m: ' + (g.setupShort ? 'OK (odbicie do EMA)' : 'brak'));
-    lines.push('  â€˘ TRIGGER 5m: ' + (g.triggerShort ? 'OK (swieca spadkowa + wolumen)' : 'brak'));
+    lines.push('  • KONTEKST 1H: ' + (g.ctxShort ? 'OK (trend bear)' : 'brak'));
+    lines.push('  • SETUP 15m: ' + (g.setupShort ? 'OK (odbicie do EMA)' : 'brak'));
+    lines.push('  • TRIGGER 5m: ' + (g.triggerShort ? 'OK (swieca spadkowa + wolumen)' : 'brak'));
   } else {
-    lines.push('  â€˘ KONTEKST 1H: ' + (g.ctxLong ? 'OK (trend bull)' : 'brak'));
-    lines.push('  â€˘ SETUP 15m: ' + (g.setupLong ? 'OK (pullback do EMA)' : 'brak'));
-    lines.push('  â€˘ TRIGGER 5m: ' + (g.triggerLong ? 'OK (swieca wzrostowa + wolumen)' : 'brak'));
+    lines.push('  • KONTEKST 1H: ' + (g.ctxLong ? 'OK (trend bull)' : 'brak'));
+    lines.push('  • SETUP 15m: ' + (g.setupLong ? 'OK (pullback do EMA)' : 'brak'));
+    lines.push('  • TRIGGER 5m: ' + (g.triggerLong ? 'OK (swieca wzrostowa + wolumen)' : 'brak'));
   }
   lines.push('');
   lines.push('INWALIDACJA TEZY:');
   if (isShort) {
-    lines.push('  â€˘ Zamkniecie 1H powyzej $' + fmtPrice(pos.sl) + ' — struktura bear sie psuje');
+    lines.push('  • Zamkniecie 1H powyzej $' + fmtPrice(pos.sl) + ' — struktura bear sie psuje');
   } else {
-    lines.push('  â€˘ Zamkniecie 1H ponizej $' + fmtPrice(pos.sl) + ' — struktura bull sie psuje');
+    lines.push('  • Zamkniecie 1H ponizej $' + fmtPrice(pos.sl) + ' — struktura bull sie psuje');
   }
-  lines.push('  â€˘ Cena nie potwierdza w ciagu 8h — wychodze (TIMEOUT)');
+  lines.push('  • Cena nie potwierdza w ciagu 8h — wychodze (TIMEOUT)');
 
   return {
     ts: now.getTime(), tsISO: now.toISOString(), type: 'entry',
@@ -2083,8 +2083,8 @@ function buildExitJournalEntry(pos, closeInfo) {
   lines.push('');
   lines.push('POST-MORTEM:');
   const thesis = analyzeThesisOutcome(pos, exitPrice, reason);
-  lines.push('  â€˘ ' + thesis.verdict);
-  for (const n of thesis.notes) lines.push('  â€˘ ' + n);
+  lines.push('  • ' + thesis.verdict);
+  for (const n of thesis.notes) lines.push('  • ' + n);
 
   return {
     ts: now.getTime(), tsISO: now.toISOString(), type: 'exit',
@@ -2113,7 +2113,7 @@ function buildCycleJournalEntry(data) {
       const pnlPct = p.cp ? (p.side === 'SHORT'
         ? ((p.entry - p.cp) / p.entry * 100)
         : ((p.cp - p.entry) / p.entry * 100)) : 0;
-      lines.push('  â€˘ [' + sideTag + '] ' + p.sym.replace('XBT','BTC').replace('USDT','') + ' @ ' + fmtPrice(p.entry) + ' (PnL: ' + fmtSignedPct(pnlPct) + '%)');
+      lines.push('  • [' + sideTag + '] ' + p.sym.replace('XBT','BTC').replace('USDT','') + ' @ ' + fmtPrice(p.entry) + ' (PnL: ' + fmtSignedPct(pnlPct) + '%)');
     }
   }
 
@@ -2123,7 +2123,7 @@ function buildCycleJournalEntry(data) {
     lines.push('Sygnaly, ktore przeszly score+SMC+KONTEKST/SETUP/TRIGGER:');
     for (const s of passedGate) {
       const dir = s.buy ? 'LONG' : 'SHORT(paper)';
-      lines.push('  â€˘ ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + dir + ' — score ' + s.score + '/100');
+      lines.push('  • ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + dir + ' — score ' + s.score + '/100');
     }
   }
 
@@ -2133,7 +2133,7 @@ function buildCycleJournalEntry(data) {
     lines.push('Wysoki score, ale odrzucone przez filtr KONTEKST/SETUP/TRIGGER:');
     for (const s of nearMiss.slice(0, 5)) {
       const reasonLine = (s.why || []).find(w => w.startsWith('KONTEKST') || w.startsWith('SETUP') || w.startsWith('TRIGGER'));
-      lines.push('  â€˘ ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + (reasonLine || 'filtr timing odrzucil'));
+      lines.push('  • ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + (reasonLine || 'filtr timing odrzucil'));
     }
   }
 
@@ -2374,7 +2374,7 @@ function expectancyFactor(matchFn) {
   const matched = recentTrades.filter(matchFn);
   if (matched.length < 4) return 1;
   const avgPnlPct = matched.reduce((s, t) => s + (t.pnlPct || 0), 0) / matched.length;
-  // Mniej agresywna regularyzacja â€“ lepsza adaptacja do rynku
+  // Mniej agresywna regularyzacja – lepsza adaptacja do rynku
   return Math.max(0.6, Math.min(1.3, 1 + avgPnlPct / 15));
 }
 
