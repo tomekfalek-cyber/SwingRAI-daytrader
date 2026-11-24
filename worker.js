@@ -1,4 +1,4 @@
-// SwingAI Bot 24/7 â€” Cloudflare Worker â€” REVOLUT X VERSION
+// SwingAI Bot 24/7 — Cloudflare Worker — REVOLUT X VERSION
 // Multi-TF DAY TRADING (1H+15min+5min), NB+GBM+QL, SMC, PATTERNS, Kelly, ATR-TP/SL, CORR, OBI
 // Market data: Revolut X public API (revx.revolut.com/api/1.0/public/*) | Execution: Revolut X (Ed25519)
 // Dane i egzekucja z JEDNEJ gieldy (Revolut X) - zero rozjazdu miedzy cena analizy
@@ -203,7 +203,7 @@ export default {
 
     if (url.pathname === '/change-pin' && request.method === 'POST') {
       const sessionOk = await isValidSession(env, request);
-      if (!sessionOk) return pinJsonResp({ ok:false, error:'Sesja wygasla â€” zaloguj sie ponownie' }, 401, request);
+      if (!sessionOk) return pinJsonResp({ ok:false, error:'Sesja wygasla — zaloguj sie ponownie' }, 401, request);
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
       const rl = await checkPinRateLimit(env, ip);
       if (rl.blocked) return pinJsonResp({ ok:false, error:'Za wiele nieudanych prob. Sprobuj za 15 minut.' }, 429, request);
@@ -224,7 +224,7 @@ export default {
 
     if (url.pathname === '/clear-stats' && request.method === 'POST') {
       const sessionOk = await isValidSession(env, request);
-      if (!sessionOk) return pinJsonResp({ ok:false, error:'Sesja wygasla â€” zaloguj sie ponownie' }, 401, request);
+      if (!sessionOk) return pinJsonResp({ ok:false, error:'Sesja wygasla — zaloguj sie ponownie' }, 401, request);
       const cfg = await getConfig(env);
       const state = await getState(env);
       state.trades = [];
@@ -374,7 +374,7 @@ export default {
     if (url.pathname === '/run') {
       const cfg = await getConfig(env);
       if (!cfg.active)
-        return new Response(redirectHTML('Bot nieaktywny â€” uruchom najpierw'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
+        return new Response(redirectHTML('Bot nieaktywny — uruchom najpierw'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
       ctx.waitUntil(runBotCycle(env));
       return new Response(redirectHTML('Skan uruchomiony! WrĂłÄ‡ za 30 sekund...'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
     }
@@ -418,7 +418,7 @@ export default {
 
     if (url.pathname === '/tg-test') {
       const cfg = await getConfig(env);
-      const payload = { chat_id: cfg.tgChat, text: 'SwingAI Revolut X â€” test', parse_mode: 'HTML' };
+      const payload = { chat_id: cfg.tgChat, text: 'SwingAI Revolut X — test', parse_mode: 'HTML' };
       const tgUrl = 'https://api.telegram.org/bot' + cfg.tgToken + '/sendMessage';
       let tgResult;
       try {
@@ -440,7 +440,7 @@ export default {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: cfg.tgChat,
-              text: 'Witaj! SwingAI Bot 24/7 â€” Revolut X aktywny.\n\nPolaczenie dziala.\nPary: BTC ETH SOL XRP PEPE\nSkany co 3 min przez Cloudflare Worker.',
+              text: 'Witaj! SwingAI Bot 24/7 — Revolut X aktywny.\n\nPolaczenie dziala.\nPary: BTC ETH SOL XRP PEPE\nSkany co 3 min przez Cloudflare Worker.',
               parse_mode: 'HTML'
             })
           }
@@ -505,7 +505,7 @@ export default {
       }
     }
 
-    return new Response('SwingAI Revolut X Worker â€” OK', { headers: corsHeaders() });
+    return new Response('SwingAI Revolut X Worker — OK', { headers: corsHeaders() });
   }
 };
 
@@ -553,7 +553,7 @@ async function runBotCycle(env) {
   const drawdownBlocked = (state.drawdownBlock || 0) > Date.now();
   if (drawdown > 0.10 && !drawdownBlocked) {
     state.drawdownBlock = Date.now() + 4 * 3600000;
-    addLog(state, 'Circuit breaker: -10% drawdown â€” blokada BUY 4h', 'err');
+    addLog(state, 'Circuit breaker: -10% drawdown — blokada BUY 4h', 'err');
   }
 
   const nb  = makeNB(state.nb);
@@ -569,8 +569,8 @@ async function runBotCycle(env) {
     const btcInfo = await btcDropGuard();
     state.btcInfo = btcInfo;
     const btcDrop = btcInfo.drop;
-    if (btcDrop) addLog(state, 'BTC Guard aktywny â€” brak nowych long na altcoinach', 'warn');
-    if (btcInfo.pump) addLog(state, 'BTC Guard (pump) aktywny â€” brak nowych SHORT na altcoinach', 'warn');
+    if (btcDrop) addLog(state, 'BTC Guard aktywny — brak nowych long na altcoinach', 'warn');
+    if (btcInfo.pump) addLog(state, 'BTC Guard (pump) aktywny — brak nowych SHORT na altcoinach', 'warn');
 
     await checkPositions(cfg, state, env, ql);
 
@@ -611,7 +611,7 @@ async function runBotCycle(env) {
 
       addLog(state, 'Dzienny limit strat przekroczony (-5% od $' + dailyBase.toFixed(0) + ')', 'err');
     } else if ((state.drawdownBlock || 0) > Date.now()) {
-      addLog(state, 'Circuit breaker aktywny â€” brak nowych pozycji', 'warn');
+      addLog(state, 'Circuit breaker aktywny — brak nowych pozycji', 'warn');
     } else {
       // Rank by dayTradeQuality — take best first (max expectancy)
       const equityNow = cfg.mode === 'live'
@@ -727,7 +727,7 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// ANALIZA TECHNICZNA â€” MULTI-TF
+// ANALIZA TECHNICZNA — MULTI-TF
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function calcVWAP(highs, lows, closes, volumes) {
   const n = Math.min(50, highs.length);
@@ -892,7 +892,7 @@ function calcStats(trades) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// FILTR KONTEKST(1H) â†’ SETUP(15m) â†’ TRIGGER(5m) â€” dodatkowy twardy gate
+// FILTR KONTEKST(1H) â†’ SETUP(15m) â†’ TRIGGER(5m) — dodatkowy twardy gate
 // nakladany NA scoring/SMC powyzej (nie zastepuje go). dir = 'LONG'|'SHORT'.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function buildContextGate(trendD, dir) {
@@ -1074,7 +1074,7 @@ async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adapti
   if      (bbD.pos < 0.08) { score += 18; why.push('Cena przy dolnej BB'); }
   else if (bbD.pos < 0.20) { score += 13; why.push('BB dolna strefa'); }
   else if (bbD.pos < 0.35) { score += 6; }
-  else if (bbD.pos > 0.85) { score -= 10; why.push('BB gorna â€” ryzyko'); }
+  else if (bbD.pos > 0.85) { score -= 10; why.push('BB gorna — ryzyko'); }
 
   if      (trendD === 2)  { score += 12; why.push('1H: ponad EMA20+50 — bull'); }
   else if (trendD === 1)  { score += 8;  why.push('1H: ponad EMA50'); }
@@ -1238,7 +1238,7 @@ if (nb.trained && gbm.trained) {
     (volR > 1.3 || vol4R > 1.3)
   ].filter(Boolean).length;
   if (finalProb >= minScore / 100 && confluence < 1) {
-    why.push('Score OK, ale brak confluence (' + confluence + '/4 rodzin sygnalow) â€” wejscie odrzucone');
+    why.push('Score OK, ale brak confluence (' + confluence + '/4 rodzin sygnalow) — wejscie odrzucone');
   }
 
   // === NOWY KOD: ODDZIELNA LOGIKA DLA LONG I SHORT ===
@@ -1430,7 +1430,7 @@ async function checkPositions(cfg, state, env, ql) {
           pos.partialSelling = true;
           try {
             const fillQty  = pos.qty * 0.4;
-            const fillPrice = price * (1 + SLIPPAGE_PAPER); // odkupujemy (buy-to-cover) â€” plac za nas
+            const fillPrice = price * (1 + SLIPPAGE_PAPER); // odkupujemy (buy-to-cover) — plac za nas
             const partialFeeCost = (pos.entry * fillQty) * FEE + (fillPrice * fillQty) * FEE;
             const realizedPnl = (pos.entry - fillPrice) * fillQty - partialFeeCost;
             const closedSize  = pos.size * (fillQty / pos.qty);
@@ -1442,7 +1442,7 @@ async function checkPositions(cfg, state, env, ql) {
             // SHORT jest zawsze paper (patrz komentarz przy openShort), wiec
             // zawsze rozliczamy przez paperBalance niezaleznie od cfg.mode.
             state.paperBalance = (state.paperBalance || 0) + closedSize + realizedPnl;
-            addLog(state, 'PARTIAL TP SHORT(paper) ' + pos.sym + ' +$' + realizedPnl.toFixed(2) + ' (' + pnlPct.toFixed(1) + '%) â€” reszta jedzie dalej', 'ok');
+            addLog(state, 'PARTIAL TP SHORT(paper) ' + pos.sym + ' +$' + realizedPnl.toFixed(2) + ' (' + pnlPct.toFixed(1) + '%) — reszta jedzie dalej', 'ok');
           } catch(e) {
             pos.partialSelling = false;
             addLog(state, 'Partial TP (short) error: ' + e.message, 'err');
@@ -1521,7 +1521,7 @@ async function checkPositions(cfg, state, env, ql) {
           if (cfg.mode === 'paper') {
             state.paperBalance = (state.paperBalance || 0) + closedSize + realizedPnl;
           }
-          addLog(state, 'PARTIAL TP ' + pos.sym + ' +$' + realizedPnl.toFixed(2) + ' (' + pnlPct.toFixed(1) + '%) â€” reszta jedzie dalej', 'ok');
+          addLog(state, 'PARTIAL TP ' + pos.sym + ' +$' + realizedPnl.toFixed(2) + ' (' + pnlPct.toFixed(1) + '%) — reszta jedzie dalej', 'ok');
         } catch(e) {
           pos.partialSelling = false;
           addLog(state, 'Partial TP SELL error: ' + e.message, 'err');
@@ -1604,7 +1604,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   const micro    = isMicroAccount(total);
 
   if (micro && (state.positions || []).length >= 1) {
-    addLog(state, 'Micro konto â€” czekam na zamkniecie obecnej pozycji', 'warn'); return;
+    addLog(state, 'Micro konto — czekam na zamkniecie obecnej pozycji', 'warn'); return;
   }
 
   if (!micro) {
@@ -1616,7 +1616,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     }, 0);
     const portfolioHeat = totalRisk / (total > 0 ? total : 1);
     if (portfolioHeat > 0.08) {
-      addLog(state, 'Portfolio heat >8% â€” blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
+      addLog(state, 'Portfolio heat >8% — blokada (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
       return;
     }
   }
@@ -1658,12 +1658,12 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   const st = state.stats;
   if (st && (state.trades || []).length >= 15 && (st.sharpe < 0 || st.maxDD > 20)) {
     posSize = Math.max(5, Math.round(posSize * 0.5 * 100) / 100);
-    addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) â€” rozmiar x0.5', 'warn');
+    addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) — rozmiar x0.5', 'warn');
   }
 
   const minSize = micro ? 1 : 10;
   if (posSize < minSize) {
-    addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) â€” pomijam ' + sig.sym, 'warn'); return;
+    addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) — pomijam ' + sig.sym, 'warn'); return;
   }
 
   addLog(state,
@@ -1713,7 +1713,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
   const _pairName = adjSig.sym.replace('XBT','BTC').replace('USDT','').replace('USDC','');
   const _modeLabel = cfg.mode === 'live' ? 'LIVE (Revolut X)' : 'PAPER (symulacja)';
   await tgSend(cfg,
-    'SYGNAL KUPNA â€” ' + _pairName + '\n\n' +
+    'SYGNAL KUPNA — ' + _pairName + '\n\n' +
     'Cena wejscia: $' + fmtPrice(adjSig.price) + '\n' +
     'Rozmiar pozycji: $' + posSize.toFixed(2) + ' (Kelly)\n' +
     'Take Profit: $' + fmtPrice(levels.tp) + '\n' +
@@ -1725,9 +1725,9 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     'Tryb: ' + _modeLabel);
 }
 
-// SHORT jest wykonywany WYLACZNIE w PAPER â€” Revolut X (spot) nie oferuje
+// SHORT jest wykonywany WYLACZNIE w PAPER — Revolut X (spot) nie oferuje
 // realnego short-sellingu. Nawet gdy cfg.mode==='live', ta funkcja NIGDY nie
-// wysyla zadnego zlecenia na Revolut X â€” tylko symuluje pozycje w state.
+// wysyla zadnego zlecenia na Revolut X — tylko symuluje pozycje w state.
 async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
   if ((state.positions||[]).some(p => p.sym === sig.sym)) return;
   if (((state.cooldown || {})[sig.sym] || 0) > Date.now()) {
@@ -1737,10 +1737,16 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'Globalna blokada aktywna', 'warn'); return;
   }
   const pp0 = (state.pairParams||{})[sig.sym] || PAIR_PARAMS_DEFAULT[sig.sym];
-  const effMinScore = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore);
+  // Cap jak w LONG — adaptive nie może urosnąć do swing-threshold
+  const rawMinS = pp0 ? pp0.minScore : (state.adaptiveMinScore || cfg.minScore || 45);
+  const effMinScore = Math.min(55, Math.max(38, rawMinS));
+  // Quality floor symetrycznie do LONG
+  if ((sig.quality || 0) < 28 && (1 - (sig.finalProb || 0.5)) < 0.55) {
+    addLog(state, 'Quality ' + (sig.quality||0) + ' za niska na SHORT daytrade ' + sig.sym, 'warn'); return;
+  }
   const pumpReason = isPumpDump(sig);
-  if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' â€” pomijam SHORT', 'warn'); return; }
-  if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' vol=' + sig.volR.toFixed(2) + 'x â€” pomijam SHORT', 'warn'); return; }
+  if (pumpReason) { addLog(state, 'Pump/dump guard (' + pumpReason + '): ' + sig.sym + ' — pomijam SHORT', 'warn'); return; }
+  if (isVolumeAnomaly(sig, effMinScore)) { addLog(state, 'Vol anomaly: ' + sig.sym + ' vol=' + (sig.volR||0).toFixed(2) + 'x — pomijam SHORT', 'warn'); return; }
   if (isDeadHour()) { addLog(state, 'Dead hour (02-05 UTC): ' + sig.sym + ' — SHORT z mniejszym size (soft)', 'warn'); }
 
   if (btcInfo.pump && sig.sym !== 'XBTUSDT') {
@@ -1750,11 +1756,12 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
 
   let adjSig = sig;
   const fgGreedThresh = 100 - cfg.fgMin;
+  // F&G greed: kara, ale hard-kill tylko przy ekstremum (>= 85) i bardzo slabym fp
   if (fg.val > fgGreedThresh) {
-    const newProb = Math.max(0, sig.finalProb - 0.10);
-    adjSig = Object.assign({}, sig, { finalProb: newProb, score: Math.max(0, sig.score - 10) });
-    if (adjSig.finalProb < effMinScore / 100) {
-      addLog(state, 'F&G=' + fg.val + ' (chciwosc) â€” po karze za slaby score pomijam SHORT ' + sig.sym, 'warn'); return;
+    const newProb = Math.max(0, sig.finalProb - 0.08);
+    adjSig = Object.assign({}, sig, { finalProb: newProb, score: Math.max(0, sig.score - 8) });
+    if (fg.val >= 85 && adjSig.finalProb < (effMinScore - 5) / 100) {
+      addLog(state, 'F&G=' + fg.val + ' ekstremalna chciwosc — pomijam slab SHORT ' + sig.sym, 'warn'); return;
     }
   }
 
@@ -1763,7 +1770,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
   const micro    = isMicroAccount(total);
 
   if (micro && (state.positions || []).length >= 1) {
-    addLog(state, 'Micro konto â€” czekam na zamkniecie obecnej pozycji', 'warn'); return;
+    addLog(state, 'Micro konto — czekam na zamkniecie obecnej pozycji', 'warn'); return;
   }
 
   if (!micro) {
@@ -1773,7 +1780,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
     }, 0);
     const portfolioHeat = totalRisk / (total > 0 ? total : 1);
     if (portfolioHeat > 0.08) {
-      addLog(state, 'Portfolio heat >8% â€” blokada SHORT (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
+      addLog(state, 'Portfolio heat >8% — blokada SHORT (' + (portfolioHeat*100).toFixed(1) + '%)', 'warn');
       return;
     }
   }
@@ -1795,12 +1802,12 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
   const st = state.stats;
   if (st && (state.trades || []).length >= 15 && (st.sharpe < 0 || st.maxDD > 20)) {
     posSize = Math.max(5, Math.round(posSize * 0.5 * 100) / 100);
-    addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) â€” rozmiar SHORT x0.5', 'warn');
+    addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) — rozmiar SHORT x0.5', 'warn');
   }
 
   const minSize = micro ? 1 : 10;
   if (posSize < minSize) {
-    addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) â€” pomijam SHORT ' + sig.sym, 'warn'); return;
+    addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) — pomijam SHORT ' + sig.sym, 'warn'); return;
   }
 
   addLog(state,
@@ -1818,7 +1825,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
   const newPos = buildPosition(adjSig, paperExecPrice, qty, levels, posSize, ql, 'SHORT');
   state.positions.push(newPos);
 
-  // SHORT jest zawsze paper (patrz komentarz nad funkcja) â€” margin rezerwujemy
+  // SHORT jest zawsze paper (patrz komentarz nad funkcja) — margin rezerwujemy
   // z paperBalance niezaleznie od cfg.mode.
   state.paperBalance = Math.max(0, (state.paperBalance || paperBal) - posSize);
   if (!state.dailyStartBalance || state.dailyStartBalance <= 0) {
@@ -1829,7 +1836,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
 
   const _pairName = adjSig.sym.replace('XBT','BTC').replace('USDT','').replace('USDC','');
   await tgSend(cfg,
-    'SYGNAL SHORT (PAPER) â€” ' + _pairName + '\n\n' +
+    'SYGNAL SHORT (PAPER) — ' + _pairName + '\n\n' +
     'Cena wejscia: $' + fmtPrice(adjSig.price) + '\n' +
     'Rozmiar pozycji: $' + posSize.toFixed(2) + ' (Kelly)\n' +
     'Take Profit: $' + fmtPrice(tp) + '\n' +
@@ -1838,7 +1845,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
     'Wynik AI: ' + adjSig.score + '/100 | Pewnosc: ' + (adjSig.finalProb*100).toFixed(1) + '%\n' +
     'Metoda: ' + adjSig.aiMethod + '\n' +
     'Powody: ' + adjSig.why.slice(0,4).join(', ') + '\n\n' +
-    'Tryb: PAPER (symulacja â€” Revolut X nie wspiera realnych shortow)');
+    'Tryb: PAPER (symulacja — Revolut X nie wspiera realnych shortow)');
 }
 
 function buildPosition(sig, price, qty, levels, size, ql, side) {
@@ -1862,7 +1869,7 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
   let execPrice = price;
 
   if (isShort) {
-    // SHORT jest zawsze paper â€” odkupujemy (buy-to-cover) w symulacji, nigdy
+    // SHORT jest zawsze paper — odkupujemy (buy-to-cover) w symulacji, nigdy
     // realne zlecenie na Revolut X (nie wspiera short-sellingu na spot).
     execPrice = price * (1 + SLIPPAGE_PAPER);
   } else if (cfg.mode === 'live' && cfg.revxApiKey && cfg.revxPrivKey) {
@@ -1901,13 +1908,13 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
     state.cooldown[pos.sym] = Date.now() + COOLDOWN_SL_MS;
     if (state.consLoss >= 3) {
       state.globalBlockUntil = Date.now() + COOLDOWN_CONS3_MS;
-      addLog(state, '3 straty z rzedu â€” blokada 90 min', 'err');
+      addLog(state, '3 straty z rzedu — blokada 90 min', 'err');
     }
   } else {
     state.consLoss = 0;
   }
 
-  // QL zna tylko akcje BUY/HOLD (semantyka "long-only") â€” nie aktualizujemy go
+  // QL zna tylko akcje BUY/HOLD (semantyka "long-only") — nie aktualizujemy go
   // wynikami SHORT, zeby nie zaburzyc modelu uzywanego do sygnalow LONG.
   if (pos.qlSig && ql && !isShort) {
     const reward = Math.max(-1, Math.min(1, pnlPct / 10));
@@ -1941,7 +1948,7 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
     reason === 'TRAILING STOP' ? 'STOP KROCZACY' :
     reason === 'TIMEOUT 8h' ? 'KONIEC CZASU (8h)' : reason;
   await tgSend(cfg,
-    (pnl>=0?'[+]':'[-]') + ' ' + (isShort ? 'SHORT(paper) ' : '') + _reasonPL + ' â€” ' + _closeSym + '\n\n' +
+    (pnl>=0?'[+]':'[-]') + ' ' + (isShort ? 'SHORT(paper) ' : '') + _reasonPL + ' — ' + _closeSym + '\n\n' +
     'Wynik: ' + (pnl>=0?'+':'') + '$' + pnl.toFixed(2) + ' (' + pnlPct.toFixed(2) + '%)\n' +
     'Czas trwania: ' + durH + 'h\n' +
     'Score wejscia: ' + pos.score + '/100\n' +
@@ -1949,7 +1956,7 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// DZIENNIK â€” bot sam wypelnia (cykl / wejscie / wyjscie / post-mortem)
+// DZIENNIK — bot sam wypelnia (cykl / wejscie / wyjscie / post-mortem)
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function addJournalEntry(state, entry) {
   if (!state.journal) state.journal = [];
@@ -1971,15 +1978,15 @@ function describeMarketRegime(btcInfo, fg) {
   else if (btc < -1) tone = 'lekko niedzwiedzio';
   else tone = 'neutralnie';
   const fgLabel = fgv < 25 ? 'strach' : fgv < 45 ? 'ostroznosc' : fgv < 55 ? 'neutralnie' : fgv < 75 ? 'chciwosc' : 'euforia';
-  return tone + ' (BTC 24h ' + fmtSignedPct(btc) + '%, F&G ' + fgv + ' â€” ' + fgLabel + ')';
+  return tone + ' (BTC 24h ' + fmtSignedPct(btc) + '%, F&G ' + fgv + ' — ' + fgLabel + ')';
 }
 
 function describeExitReason(reason) {
   const map = {
-    'TAKE PROFIT': 'Take Profit â€” cel osiagniety',
-    'STOP LOSS': 'Stop Loss â€” struktura zepsuta',
-    'TRAILING STOP': 'Trailing Stop â€” cena sie odwrocila',
-    'TIMEOUT 8h': 'Timeout â€” brak potwierdzenia w 8h'
+    'TAKE PROFIT': 'Take Profit — cel osiagniety',
+    'STOP LOSS': 'Stop Loss — struktura zepsuta',
+    'TRAILING STOP': 'Trailing Stop — cena sie odwrocila',
+    'TIMEOUT 8h': 'Timeout — brak potwierdzenia w 8h'
   };
   return map[reason] || reason;
 }
@@ -1992,21 +1999,21 @@ function analyzeThesisOutcome(pos, exitPrice, reason) {
   const tpReached = isShort ? exitPrice <= pos.tp : exitPrice >= pos.tp;
 
   if (reason === 'TAKE PROFIT' || tpReached) {
-    verdict = 'Teza zrealizowana w pelni â€” cena doszla do celu.';
+    verdict = 'Teza zrealizowana w pelni — cena doszla do celu.';
     notes.push('Cel osiagniety zgodnie z planem, wykonanie bez uwag.');
   } else if (reason === 'TRAILING STOP' && wasProfit) {
     const totalMove = Math.abs(pos.tp - pos.entry);
     const gotMove   = Math.abs(exitPrice - pos.entry);
     const pctOfTarget = totalMove > 0 ? (gotMove / totalMove * 100).toFixed(0) : '0';
-    verdict = 'Teza zrealizowana czesciowo â€” trailing zabezpieczyl ' + pctOfTarget + '% drogi do celu.';
-    if (pctOfTarget >= 80) notes.push('Trailing zadzialal prawidlowo â€” cena sie odwrocila, ochrona zadzialala.');
-    else if (pctOfTarget >= 50) notes.push('Trailing zamknal pozycje w polowie drogi â€” mozna rozwazyc szerszy trailing.');
-    else notes.push('Trailing zamknal za wczesnie â€” cena nie miala miejsca na oddech.');
+    verdict = 'Teza zrealizowana czesciowo — trailing zabezpieczyl ' + pctOfTarget + '% drogi do celu.';
+    if (pctOfTarget >= 80) notes.push('Trailing zadzialal prawidlowo — cena sie odwrocila, ochrona zadzialala.');
+    else if (pctOfTarget >= 50) notes.push('Trailing zamknal pozycje w polowie drogi — mozna rozwazyc szerszy trailing.');
+    else notes.push('Trailing zamknal za wczesnie — cena nie miala miejsca na oddech.');
   } else if (reason === 'STOP LOSS' || reason === 'TIMEOUT 8h') {
-    verdict = 'Teza nie zrealizowala sie â€” cena poszla w druga strone.';
-    notes.push('Setup nie zadzialal â€” to czesc procesu, nie kazdy trade wygrywa.');
-    if (reason === 'TIMEOUT 8h') notes.push('Pozycja stala w miejscu â€” brak momentum w oknie 8h.');
-    else notes.push('Stop zadzialal zgodnie z planem â€” strata pod kontrola.');
+    verdict = 'Teza nie zrealizowala sie — cena poszla w druga strone.';
+    notes.push('Setup nie zadzialal — to czesc procesu, nie kazdy trade wygrywa.');
+    if (reason === 'TIMEOUT 8h') notes.push('Pozycja stala w miejscu — brak momentum w oknie 8h.');
+    else notes.push('Stop zadzialal zgodnie z planem — strata pod kontrola.');
   } else {
     verdict = 'Zamkniete z powodu: ' + reason;
   }
@@ -2043,11 +2050,11 @@ function buildEntryJournalEntry(sig, pos, cfg) {
   lines.push('');
   lines.push('INWALIDACJA TEZY:');
   if (isShort) {
-    lines.push('  â€˘ Zamkniecie 1H powyzej $' + fmtPrice(pos.sl) + ' â€” struktura bear sie psuje');
+    lines.push('  â€˘ Zamkniecie 1H powyzej $' + fmtPrice(pos.sl) + ' — struktura bear sie psuje');
   } else {
-    lines.push('  â€˘ Zamkniecie 1H ponizej $' + fmtPrice(pos.sl) + ' â€” struktura bull sie psuje');
+    lines.push('  â€˘ Zamkniecie 1H ponizej $' + fmtPrice(pos.sl) + ' — struktura bull sie psuje');
   }
-  lines.push('  â€˘ Cena nie potwierdza w ciagu 8h â€” wychodze (TIMEOUT)');
+  lines.push('  â€˘ Cena nie potwierdza w ciagu 8h — wychodze (TIMEOUT)');
 
   return {
     ts: now.getTime(), tsISO: now.toISOString(), type: 'entry',
@@ -2116,7 +2123,7 @@ function buildCycleJournalEntry(data) {
     lines.push('Sygnaly, ktore przeszly score+SMC+KONTEKST/SETUP/TRIGGER:');
     for (const s of passedGate) {
       const dir = s.buy ? 'LONG' : 'SHORT(paper)';
-      lines.push('  â€˘ ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + dir + ' â€” score ' + s.score + '/100');
+      lines.push('  â€˘ ' + s.sym.replace('XBT','BTC').replace('USDT','') + ': ' + dir + ' — score ' + s.score + '/100');
     }
   }
 
@@ -2141,7 +2148,7 @@ function buildCycleJournalEntry(data) {
 }
 
 function formatJournalForText(entry) {
-  const header = 'â•â•â• ' + (entry.title || entry.type.toUpperCase()) + ' â€” ' + (entry.tsISO || '').slice(0,16).replace('T',' ') + ' â•â•â•';
+  const header = 'â•â•â• ' + (entry.title || entry.type.toUpperCase()) + ' — ' + (entry.tsISO || '').slice(0,16).replace('T',' ') + ' â•â•â•';
   return header + '\n' + entry.lines.join('\n');
 }
 
@@ -2708,7 +2715,7 @@ function atr(h, l, c, p=14) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// MARKET DATA â€” BYBIT V5
+// MARKET DATA — BYBIT V5
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 const BYBIT_BASE = 'https://api.bybit.com';
 function bybitSymbol(sym) { return sym.replace('XBT', 'BTC'); }
@@ -2797,7 +2804,7 @@ async function getFearGreed(state) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// REVOLUT X TRADING â€” Ed25519 signing
+// REVOLUT X TRADING — Ed25519 signing
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function revxInstrument(sym) {
   return sym.replace('XBT','BTC').replace('USDT','/USDC');
@@ -2841,7 +2848,7 @@ async function revxRequest(method, path, body, cfg) {
   try {
     privKey = await revxImportKey(cfg.revxPrivKey);
   } catch(e) {
-    throw new Error('Revolut X: nieprawidlowy klucz prywatny â€” ' + e.message);
+    throw new Error('Revolut X: nieprawidlowy klucz prywatny — ' + e.message);
   }
 
   const signature = await revxSign(sigMsg, privKey);
@@ -2888,7 +2895,7 @@ async function revxMarketBuy(sym, quoteSize, cfg) {
     quote_size: quoteSize.toFixed(2)
   };
   const order = await revxRequest('POST', '/orders', body, cfg);
-  if (!order.id) throw new Error('Revolut X buy: brak order.id â€” ' + JSON.stringify(order));
+  if (!order.id) throw new Error('Revolut X buy: brak order.id — ' + JSON.stringify(order));
 
   let details = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -2903,8 +2910,8 @@ async function revxMarketBuy(sym, quoteSize, cfg) {
   const avgPrice  = details && details.average_price ? +details.average_price : 0;
   const filledQty = details && details.filled_base_size ? +details.filled_base_size : 0;
   if (!avgPrice || !filledQty) {
-    await tgSend(cfg, '[KRYTYCZNE] Zlecenie BUY ' + order.id + ' (' + sym + ') zlozone na Revolut X, ale bot nie otrzymal average_price/filled_base_size po 3 probach â€” SPRAWDZ RECZNIE na Revolut X! Pozycja NIE jest sledzona przez bota.');
-    throw new Error('Revolut X buy: zlecenie ' + order.id + ' zlozone, ale brak average_price/filled_base_size po 3 probach â€” pozycja NIE zapisana (sprawdz recznie!)');
+    await tgSend(cfg, '[KRYTYCZNE] Zlecenie BUY ' + order.id + ' (' + sym + ') zlozone na Revolut X, ale bot nie otrzymal average_price/filled_base_size po 3 probach — SPRAWDZ RECZNIE na Revolut X! Pozycja NIE jest sledzona przez bota.');
+    throw new Error('Revolut X buy: zlecenie ' + order.id + ' zlozone, ale brak average_price/filled_base_size po 3 probach — pozycja NIE zapisana (sprawdz recznie!)');
   }
   return { price: avgPrice, qty: filledQty, orderId: order.id };
 }
@@ -2919,7 +2926,7 @@ async function revxMarketSell(sym, baseQty, cfg) {
     base_size: baseSizeStr
   };
   const order = await revxRequest('POST', '/orders', body, cfg);
-  if (!order.id) throw new Error('Revolut X sell: brak order.id â€” ' + JSON.stringify(order));
+  if (!order.id) throw new Error('Revolut X sell: brak order.id — ' + JSON.stringify(order));
 
   let details = null;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -2934,8 +2941,8 @@ async function revxMarketSell(sym, baseQty, cfg) {
   const avgPrice  = details && details.average_price ? +details.average_price : 0;
   const filledQty = details && details.filled_base_size ? +details.filled_base_size : 0;
   if (!avgPrice || !filledQty) {
-    await tgSend(cfg, '[KRYTYCZNE] Zlecenie SELL ' + order.id + ' (' + sym + ') zlozone na Revolut X, ale bot nie otrzymal average_price/filled_base_size po 3 probach â€” SPRAWDZ RECZNIE na Revolut X! Pozycja NADAL sledzona przez bota jako otwarta.');
-    throw new Error('Revolut X sell: zlecenie ' + order.id + ' zlozone, ale brak average_price/filled_base_size po 3 probach â€” pozycja NIE zamknieta (sprawdz recznie!)');
+    await tgSend(cfg, '[KRYTYCZNE] Zlecenie SELL ' + order.id + ' (' + sym + ') zlozone na Revolut X, ale bot nie otrzymal average_price/filled_base_size po 3 probach — SPRAWDZ RECZNIE na Revolut X! Pozycja NADAL sledzona przez bota jako otwarta.');
+    throw new Error('Revolut X sell: zlecenie ' + order.id + ' zlozone, ale brak average_price/filled_base_size po 3 probach — pozycja NIE zamknieta (sprawdz recznie!)');
   }
   return { price: avgPrice, qty: filledQty, orderId: order.id };
 }
@@ -2955,7 +2962,7 @@ async function tgSend(cfg, msg) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PIN GATE â€” HELPERY
+// PIN GATE — HELPERY
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
