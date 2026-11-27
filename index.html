@@ -910,8 +910,8 @@ let CFG = {
   revxApiKey:'', revxPrivKey:'',
   // Day trading: dużo ciaśniejsze poziomy niż swing (tam 12%/5%/6%) - pozycje
   // trzymane w ramach jednej sesji, nie tygodni. Ta sama poprawka co w worker.js.
-  tp:0.02, sl:0.01, trail:0.008, maxPos:3, riskPct:1.25, posSize:15,
-  intervalMin:3, paperBal:1000, minScore:48, fgMin:12,
+  tp:0.02, sl:0.01, trail:0.008, maxPos:3, riskPct:1.0, posSize:15,
+  intervalMin:3, paperBal:1000, minScore:42, fgMin:12,
   tgToken:'', tgChat:'', soundAlerts:true
 };
 // Day trading: mniej par niz swing (bylo 8), bo czestszy skan (co 3 min) wymaga
@@ -1762,7 +1762,22 @@ async function analyzeSwing(sym) {
   if (scoreShort && !stagedShort) why.push('SHORT timing 0/3');
 
   let buy         = scoreBuy && stagedLong;
+  // CRYPTO EDGE: tnie longi bez wolumenu/R:R/momentum
+  if (buy && globalThis.CRYPTO_EDGE) {
+    try {
+      var _egL = CRYPTO_EDGE.entryGate({ buy: true, side: 'LONG', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      if (!_egL.ok) { buy = false; why.push('EDGE block LONG: ' + _egL.why); }
+      else why.push(_egL.why);
+    } catch (eEdgeL) {}
+  }
   let shortSignal = scoreShort && stagedShort;
+  if (shortSignal && globalThis.CRYPTO_EDGE) {
+    try {
+      var _egS = CRYPTO_EDGE.entryGate({ shortSignal: true, side: 'SHORT', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      if (!_egS.ok) { shortSignal = false; why.push('EDGE block SHORT: ' + _egS.why); }
+      else why.push(_egS.why);
+    } catch (eEdgeS) {}
+  }
   if (buy && shortSignal) {
     if ((finalProb - 0.5) >= (0.5 - finalProb)) { shortSignal = false; why.push('Conflict→LONG'); }
     else { buy = false; why.push('Conflict→SHORT'); }
@@ -5654,6 +5669,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<script src="crypto-edge.js?v=edge1"></script>
 </body>
 
 </html>

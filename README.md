@@ -39,3 +39,9 @@ Potem nałóż fix daytrading (btcInfo, scoring 1H/15m/5m, TP 2%/SL 1%, ATR 1.8x
 - `stagedLong` bez progu +12pp ponad minScore
 - Mniejsza kara bessa/reżim bear
 - Kontekst 1H: trendD >= -1 przepuszcza long
+
+## Crypto Edge Pack
+- `crypto-edge.js`: filtr wejść (wolumen, momentum 1h, net R:R po opłatach Revolut X)
+- Longi na odbiciu z potwierdzeniem; shorty nie idą pod impuls wzrostowy
+- Domyślnie minScore 42, risk 1%
+- To poprawia **jakość procesu**, nie gwarantuje zysku
