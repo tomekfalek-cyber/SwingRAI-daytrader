@@ -938,7 +938,7 @@ function loadAll() {
   try { const c=localStorage.getItem('swingai_revolut_cfg_v1'); if(c) CFG={...CFG,...JSON.parse(c)}; } catch(e){}
   if (!CFG.intervalMin || CFG.intervalMin < 3) CFG.intervalMin = 3;
   // Migracja daytrading: stare progi swing (62+) blokowaly paper
-  if (!CFG.minScore || CFG.minScore > 52) CFG.minScore = 45;
+  if (!CFG.minScore || CFG.minScore > 55) CFG.minScore = 42;
   if (CFG.fgMin == null || CFG.fgMin > 25) CFG.fgMin = 12;
   if (CFG.maxPos == null || CFG.maxPos > 4) CFG.maxPos = 3;
   if (CFG.mode === 'mexc') CFG.mode = 'live';
@@ -1427,9 +1427,9 @@ function premiumDiscountZone(h, l, c, lookback) {
 
 // ── FILTR KONTEKST(1H) → SETUP(15m) → TRIGGER(5m) — DAYTRADING (miękkie) ──
 function buildContextGate(trendD, dir) {
-  // Long OK gdy nie-bear (trendD>=0). Wczesniej >=1 = ZERO longow w flat.
+  // Long OK gdy nie-silny-bear. trendD=-1 (soft bear) przepuszcza — odbicia dzienne.
   if (dir === 'LONG') {
-    if (trendD >= 0) return { pass: true, reason: null };
+    if (trendD >= -1) return { pass: true, reason: null };
     return { pass: false, reason: 'KONTEKST 1H: trend bear (trendD=' + trendD + ')' };
   }
   if (trendD <= 0) return { pass: true, reason: null };
@@ -1573,7 +1573,7 @@ async function analyzeSwing(sym) {
   if (divD.bear)  { score -= 10; why.push('RSI dywergen. niedzwiedzia 1H'); }
   if (div4h.bear) { score -= 6;  why.push('RSI dywergen. niedzwiedzia 15m'); }
   const bearBias = trendD===-1 && rsiD>50;
-  if (bearBias) { score-=30; why.push('BESSA: long wymaga silnego potwierdzenia'); }
+  if (bearBias) { score-=12; why.push('BESSA: long ostroznie (-12)'); }
   // bullBias - symetryczny twardy blok dla SHORT w silnym trendzie wzrostowym
   // z RSI<50 (analogicznie do bearBias blokujacego LONG w bessie). Bez tego
   // short mogl odpalac sie nawet w hossie - asymetria wzgledem longa.
@@ -1621,9 +1621,9 @@ async function analyzeSwing(sym) {
   // + +15 BOS + +12 trend latwo przebijaly prog nawet w chopie). Ta sama
   // poprawka co w worker.js.
   // +18 sumowalo sie z progami (np. XBT 66+18=84) i dzialalo jak wylacznik.
-  if (regime === 'sideways')   { regimeMinScoreAdj = 6; }
+  if (regime === 'sideways')   { regimeMinScoreAdj = 0; }
   if (regime === 'bull_trend') { score += 5; why.push('Rezim: bull trend'); }
-  if (regime === 'bear_trend') { score -= 15; why.push('Rezim: bear trend'); }
+  if (regime === 'bear_trend') { score -= 6; why.push('Rezim: bear trend'); }
   if (regime === 'volatile')   { score -= 8;  why.push('Rezim: volatile'); }
 
   // ── Pattern Recognition (Module 3) ─────────────────────────────
@@ -1722,16 +1722,16 @@ async function analyzeSwing(sym) {
   // DAYTRADING ENTRY — mirror of worker.js (symmetric long/short, no swing lock)
   const longThreshold = effectiveMinScore / 100;
   const shortThreshold = 1 - longThreshold;
-  const hardBear = (trendD === -1 && rsiD > 55 && macdD.hist < 0);
+  const hardBear = (trendD === -1 && rsiD > 62 && macdD.hist < 0 && bbD.pos > 0.55);
   const longConfluence2 = [
     rsiD <= 58, bbD.pos < 0.50, macdD.hist > 0, volR > 0.85,
     divD.bull || div4h.bull,
     structure.event === 'BOS_up' || structure.event === 'CHoCH_up',
     nearBullOB || (liqSweep && liqSweep.type === 'bullish')
   ].filter(Boolean).length;
-  const trendAllowsLong = trendD >= 0 || (trendD === -1 && rsiD <= 38 && (divD.bull || bbD.pos < 0.25));
-  let scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && longConfluence2 >= 1;
-  if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold + 0.08) scoreBuy = true;
+  const trendAllowsLong = trendD >= 0 || (trendD === -1 && (rsiD <= 48 || macdD.hist > 0 || bbD.pos < 0.40 || divD.bull || div4h.bull));
+  let scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && (longConfluence2 >= 1 || finalProb >= longThreshold + 0.05);
+  if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold) scoreBuy = longConfluence2 >= 1 || rsiD <= 42 || macdD.hist > 0;
   if (scoreBuy) why.push('LONG candidate conf=' + longConfluence2 + ' fp=' + (finalProb*100).toFixed(0));
 
   const levels = calcDynamicLevels(price, atrD, FEE, pairP);
@@ -1751,7 +1751,7 @@ async function analyzeSwing(sym) {
   const setupLong   = buildSetupGate(h4, 'LONG');
   const triggerLong = buildTriggerGate(h1, 'LONG');
   const gatesLong = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
-  const stagedLong  = gatesLong >= 1 || (scoreBuy && finalProb >= longThreshold + 0.12);
+  const stagedLong  = gatesLong >= 1 || scoreBuy;
   if (scoreBuy && !stagedLong) why.push('LONG timing 0/3');
 
   const ctxShort     = buildContextGate(trendD, 'SHORT');

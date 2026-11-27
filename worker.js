@@ -898,7 +898,7 @@ function calcStats(trades) {
 function buildContextGate(trendD, dir) {
   // Daytrading: long OK gdy nie-bear (trendD>=0). Wczesniej >=1 = ZERO longow w flat.
   if (dir === 'LONG') {
-    if (trendD >= 0) return { pass: true, reason: null };
+    if (trendD >= -1) return { pass: true, reason: null };
     return { pass: false, reason: 'KONTEKST 1H: trend bear (trendD=' + trendD + ') — long zablokowany' };
   }
   if (trendD <= 0) return { pass: true, reason: null };
@@ -1127,6 +1127,7 @@ async function analyzeSwing(sym, cfg, state, nb, gbm, ql, ew, pairParams, adapti
 
   const bearBias = trendD === -1 && rsiD > 50;
   const bullBias = trendD === 2 && rsiD < 50;
+if (bearBias) { score = Math.max(0, score - 12); why.push("BESSA: long ostroznie (-12)"); }
 score = Math.max(0, Math.min(100, Math.round(score)));
 
   if (price > vwap4h) { score += 8;  why.push('Ponad VWAP 15m'); }
@@ -1145,7 +1146,7 @@ score = Math.max(0, Math.min(100, Math.round(score)));
   // nie mial realnych szans. +6 nadal zniecheca do chopu, ale nie zamyka drzwi.
   if (regime === 'sideways')   { regimeMinScoreAdj = 0; }
   if (regime === 'bull_trend') { score += 5; why.push('Rezim: bull trend'); }
-  if (regime === 'bear_trend') { score -= 15; why.push('Rezim: bear trend'); }
+  if (regime === 'bear_trend') { score -= 6; why.push('Rezim: bear trend'); }
   if (regime === 'volatile')   { score -= 8;  why.push('Rezim: volatile'); }
   score = Math.max(0, Math.min(100, score));
 
@@ -1255,7 +1256,7 @@ const shortThreshold = 1 - longThreshold; // e.g. min 45 → short needs fp <= 0
 
 // --- LONG ---
 // Allow longs in flat and mild bull. Mean-reversion long allowed in mild bear if deeply OS.
-const hardBear = (trendD === -1 && rsiD > 55 && macdD.hist < 0);
+const hardBear = (trendD === -1 && rsiD > 62 && macdD.hist < 0 && bbD.pos > 0.55);
 const longConfluence = [
   rsiD <= 58, bbD.pos < 0.50, macdD.hist > 0, volR > 0.85,
   divD.bull || div4h.bull,
@@ -1264,10 +1265,10 @@ const longConfluence = [
   price > ema20 || price > ema50
 ].filter(Boolean).length;
 
-const trendAllowsLong = trendD >= 0 || (trendD === -1 && rsiD <= 38 && (divD.bull || bbD.pos < 0.25));
-scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && longConfluence >= 1;
-// High conviction: skip confluence requirement
-if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold + 0.08) scoreBuy = true;
+const trendAllowsLong = trendD >= 0 || (trendD === -1 && (rsiD <= 48 || macdD.hist > 0 || bbD.pos < 0.40 || divD.bull || div4h.bull));
+scoreBuy = trendAllowsLong && finalProb >= longThreshold && !hardBear && (longConfluence >= 1 || finalProb >= longThreshold + 0.05);
+// High conviction / bounce: allow long without full confluence
+if (!scoreBuy && trendAllowsLong && !hardBear && finalProb >= longThreshold) scoreBuy = longConfluence >= 1 || rsiD <= 42 || macdD.hist > 0;
 if (scoreBuy) why.push('LONG candidate conf=' + longConfluence + ' fp=' + (finalProb*100).toFixed(0));
 
 // --- SHORT (symetrycznie do LONG) ---
@@ -1292,7 +1293,7 @@ const setupLong   = buildSetupGate(h4, 'LONG');
 const triggerLong = buildTriggerGate(h1, 'LONG');
 const gatesLong   = [ctxLong.pass, setupLong.pass, triggerLong.pass].filter(Boolean).length;
 // Daytrading: 1 gate enough; high conviction can pass with 0 gates if fp very high
-const stagedLong  = gatesLong >= 1 || (scoreBuy && finalProb >= longThreshold + 0.12);
+const stagedLong  = gatesLong >= 1 || scoreBuy;
 if (scoreBuy && !stagedLong) why.push('LONG timing fail 0/3 gates');
 
 const ctxShort     = buildContextGate(trendD, 'SHORT');

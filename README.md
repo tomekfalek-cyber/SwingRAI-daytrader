@@ -33,3 +33,9 @@ git push origin 1549087717372b82af9f27dee84f3328d9e027ce:main --force
 ```
 
 Potem nałóż fix daytrading (btcInfo, scoring 1H/15m/5m, TP 2%/SL 1%, ATR 1.8x/1.0x, UI).
+
+## Daytrade LONG (2026-11 fix)
+- Long dozwolony przy lekkim bear / odbiciu (RSI, MACD, BB), nie tylko w silnym bull
+- `stagedLong` bez progu +12pp ponad minScore
+- Mniejsza kara bessa/reżim bear
+- Kontekst 1H: trendD >= -1 przepuszcza long
