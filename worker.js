@@ -259,13 +259,13 @@ const CORR_GROUPS = [
 const PAIR_PARAMS_DEFAULT = {
   // Daytrading thresholds — intraday flow (1H/15m/5m)
   'XBTUSDT':  { minScore:42 },
-  'ETHUSDT':  { minScore:45 },
-  'SOLUSDT':  { minScore:44 },
-  'XRPUSDT':  { minScore:44 },
+  'ETHUSDT':  { minScore:42 },
+  'SOLUSDT':  { minScore:42 },
+  'XRPUSDT':  { minScore:42 },
   'DOGEUSDT': { minScore:42 },
-  'ADAUSDT':  { minScore:44 },
-  'AVAXUSDT': { minScore:44 },
-  'LINKUSDT': { minScore:44 },
+  'ADAUSDT':  { minScore:42 },
+  'AVAXUSDT': { minScore:42 },
+  'LINKUSDT': { minScore:42 },
   'PEPEUSDT': { tp:0.03, sl:0.015, minScore:42 }
 };
 
@@ -438,7 +438,7 @@ export default {
       cfg.minScore = parseInt(p.score ?? 56);
       cfg.maxPos   = parseInt(p.maxp  ?? 3);
       cfg.posSize  = parseFloat(p.size ?? 15);
-      cfg.riskPct  = parseFloat(p.riskPct ?? 1.25);
+      cfg.riskPct  = parseFloat(p.riskPct ?? 1.0);
       cfg.fgMin    = parseInt(p.fgMin ?? 20);
       cfg.tgToken  = p.tg   || '';
       cfg.tgChat   = p.tgc  || '';
@@ -1426,7 +1426,7 @@ let buy         = scoreBuy && stagedLong;
   // CRYPTO EDGE: tnie longi bez wolumenu/R:R/momentum
   if (buy && globalThis.CRYPTO_EDGE) {
     try {
-      var _egL = CRYPTO_EDGE.entryGate({ buy: true, side: 'LONG', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      var _egL = CRYPTO_EDGE.entryGate({ buy: true, side: 'LONG', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && (levels.tpPct||levels.tpPctAbs)) || ((typeof CFG!=='undefined'&&CFG.tp)?CFG.tp*100:1.2), slPct: (levels && (levels.slPct||levels.slPctAbs)) || ((typeof CFG!=='undefined'&&CFG.sl)?CFG.sl*100:0.8) }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
       if (!_egL.ok) { buy = false; why.push('EDGE block LONG: ' + _egL.why); }
       else why.push(_egL.why);
     } catch (eEdgeL) {}
@@ -1434,7 +1434,7 @@ let buy         = scoreBuy && stagedLong;
 let shortSignal = scoreShort && stagedShort;
   if (shortSignal && globalThis.CRYPTO_EDGE) {
     try {
-      var _egS = CRYPTO_EDGE.entryGate({ shortSignal: true, side: 'SHORT', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      var _egS = CRYPTO_EDGE.entryGate({ shortSignal: true, side: 'SHORT', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && (levels.tpPct||levels.tpPctAbs)) || ((typeof CFG!=='undefined'&&CFG.tp)?CFG.tp*100:1.2), slPct: (levels && (levels.slPct||levels.slPctAbs)) || ((typeof CFG!=='undefined'&&CFG.sl)?CFG.sl*100:0.8) }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
       if (!_egS.ok) { shortSignal = false; why.push('EDGE block SHORT: ' + _egS.why); }
       else why.push(_egS.why);
     } catch (eEdgeS) {}
@@ -3166,8 +3166,8 @@ function defaultConfig() {
   return {
     active: false, mode: 'paper',
     tp: 0.02, sl: 0.01, trail: 0.008,
-    maxPos: 3, posSize: 12, riskPct: 1.25, // daytrading: mniej pozycji, mniejsze ryzyko
-    paperBalance: 1000, minScore: 45, fgMin: 10,
+    maxPos: 3, posSize: 12, riskPct: 1.0, // daytrading: mniej pozycji, mniejsze ryzyko
+    paperBalance: 1000, minScore:42, fgMin: 10,
     revxApiKey: '', revxPrivKey: '',
     tgToken: '', tgChat: ''
   };

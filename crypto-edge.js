@@ -54,13 +54,13 @@
     var vol4 = sig.vol4R != null ? +sig.vol4R : volR;
 
     // Martwy wolumen — nie daytrade
-    if (volR < 0.55 && vol4 < 0.55) return { ok: false, why: 'wolumen martwy (volR)' };
+    if (volR < 0.45 && vol4 < 0.45) return { ok: false, why: 'wolumen martwy (volR)' };
 
     // Score floor
     if (side === 'LONG' && score < 42 && fp < 0.42) return { ok: false, why: 'score long za niski' };
-    if (side === 'SHORT' && score > 58 && fp > 0.58) {
-      // score jest long-oriented: wysoki score = słaby short
-      return { ok: false, why: 'score nie wspiera SHORT' };
+    if (side === 'SHORT' && fp > 0.55) {
+      // score long-oriented: wysokie finalProb = słaby short
+      return { ok: false, why: 'finalProb za wysokie na SHORT' };
     }
 
     // Momentum alignment (przewaga: nie idź pod świeży impuls)
