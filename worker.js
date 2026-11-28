@@ -123,9 +123,9 @@
 // a cena wykonania, i zero kolizji limitu zapytan z botem MEXC/swing (ktory uzywa
 // Krakena) dzialajacym na tym samym koncie Cloudflare.
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // KONFIGURACJA
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 const PAIRS = ['XBTUSDT','ETHUSDT','SOLUSDT','XRPUSDT','PEPEUSDT'];
 
 // FIX #1: Realna stawka taker na Revolut X to 0.09% (0.0009), NIE 0.2%.
@@ -155,6 +155,7 @@ const OB_FVG_MAX_AGE_BARS = 12;  // TTL Order Block / FVG na 15m (~3h)
 // ═══════════════════════════════════════════════════════════════
 // DAYTRADING QUALITY LAYER — max expectancy, not max trade count
 // ═══════════════════════════════════════════════════════════════
+const MIN_ORDER_USD = 5;            // minimalny rozmiar zlecenia; spójny z Math.max(5, ...) przy mnożnikach rozmiaru
 const DT_MIN_RR = 1.4;              // reject setups with planned R:R below this
 const DT_MAX_TRADES_DAY = 8;        // anti-overtrade (crypto 24/7 still needs cap)
 const DT_DAILY_PROFIT_LOCK = 0.06;  // +6% day → no new risk (protect winners)
@@ -236,7 +237,11 @@ function dayTradeQuality(sig) {
 function countTradesToday(state) {
   const start = new Date(); start.setUTCHours(0,0,0,0);
   const t0 = start.getTime();
-  return (state.trades || []).filter(t => (t.ts || 0) >= t0).length;
+  const tsOf = v => (typeof v === 'string' ? new Date(v).getTime() : (v || 0));
+  // zamknięte dziś + otwarte dziś (inaczej limit dzienny był omijany przez pozycje jeszcze niezamknięte)
+  const closed = (state.trades || []).filter(t => tsOf(t.ts) >= t0).length;
+  const open = (state.positions || []).filter(p => tsOf(p.entryTs) >= t0).length;
+  return closed + open;
 }
 
 function dailyPnlPct(state, equity) {
@@ -271,9 +276,9 @@ const PAIR_PARAMS_DEFAULT = {
 
 const REVX_BASE = 'https://revx.revolut.com/api/1.0';
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // GĹĂ“WNY HANDLER
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runBotCycle(env));
@@ -494,7 +499,7 @@ export default {
       if (!cfg.active)
         return new Response(redirectHTML('Bot nieaktywny — uruchom najpierw'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
       ctx.waitUntil(runBotCycle(env));
-      return new Response(redirectHTML('Skan uruchomiony! WrĂłÄ‡ za 30 sekund...'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
+      return new Response(redirectHTML('Skan uruchomiony! Wróć za 30 sekund...'), { headers: {'Content-Type':'text/html;charset=utf-8'} });
     }
 
     if (url.pathname === '/status') {
@@ -523,7 +528,7 @@ export default {
       if (!cfg.tgToken || !cfg.tgChat) return jsonResp({ ok: false, error: 'Brak tokenu Telegram' });
       let msg = '';
       try { const body = await request.json(); msg = body.text || ''; } catch(e) { msg = url.searchParams.get('text') || ''; }
-      if (!msg) return jsonResp({ ok: false, error: 'Brak treĹ›ci wiadomoĹ›ci' });
+      if (!msg) return jsonResp({ ok: false, error: 'Brak treści wiadomości' });
       try {
         const tgR = await fetchWithTimeout('https://api.telegram.org/bot' + cfg.tgToken + '/sendMessage', 8000, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -627,9 +632,9 @@ export default {
   }
 };
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // GĹĂ“WNA LOGIKA CYKLU
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 async function runBotCycle(env) {
   const cfg   = await getConfig(env);
   if (!cfg.active) return;
@@ -727,7 +732,7 @@ async function runBotCycle(env) {
     }
     if (!dailyLossOk) {
 
-      addLog(state, 'Dzienny limit strat przekroczony (-5% od $' + dailyBase.toFixed(0) + ')', 'err');
+      addLog(state, 'Dzienny limit strat przekroczony (-' + (DAILY_LOSS_LIMIT*100).toFixed(0) + '% od $' + dailyBase.toFixed(0) + ')', 'err');
     } else if ((state.drawdownBlock || 0) > Date.now()) {
       addLog(state, 'Circuit breaker aktywny — brak nowych pozycji', 'warn');
     } else {
@@ -761,7 +766,6 @@ async function runBotCycle(env) {
           await openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew);
         }
       }
-      }
     }
 
     const trades = state.trades || [];
@@ -775,17 +779,17 @@ async function runBotCycle(env) {
     if ((tradesSinceRefit >= 50 && trades.length >= 20) || (!gbm.trained && trades.length >= 20)) {
       gbm.trainFromTrades(trades.slice(0, 200));
       state.lastGbmRefit = Date.now();
-      addLog(state, 'GBM walk-forward refit: ' + Math.min(trades.length,200) + ' tradĂłw, OOS=' + gbm.accuracyOOS + '%', 'ok');
+      addLog(state, 'GBM walk-forward refit: ' + Math.min(trades.length,200) + ' tradów, OOS=' + gbm.accuracyOOS + '%', 'ok');
     }
 
-   // FIX: Ensemble rebalance czÄ™Ĺ›ciej (co 25 trade'Ăłw) + lepsza elastycznoĹ›Ä‡
+   // FIX: Ensemble rebalance częściej (co 25 trade'ów) + lepsza elastyczność
 const milestone = Math.floor(trades.length / 25) * 25;
 if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
   const ewUpd = rebalanceEnsemble(ew, nb, gbm, trades.slice(0, 25));
   if (ewUpd) {
     Object.assign(ew, ewUpd);
     state.lastEnsembleRebalance = milestone;
-    addLog(state, 'Ensemble rebalanced @' + milestone + ' tradĂłw: nb=' + ew.nb.toFixed(2) + ' gbm=' + ew.gbm.toFixed(2), 'ok');
+    addLog(state, 'Ensemble rebalanced @' + milestone + ' tradów: nb=' + ew.nb.toFixed(2) + ' gbm=' + ew.gbm.toFixed(2), 'ok');
   }
 }
 
@@ -808,7 +812,7 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
         continue;
       }
       const wr = symTrades.filter(t => t.pnl > 0).length / symTrades.length;
-      // wr=0.50 â†’ adj=0; wr=0.30 â†’ +4; wr=0.70 â†’ -4
+      // wr=0.50 → adj=0; wr=0.30 → +4; wr=0.70 → -4
       const adj = Math.round((0.5 - wr) * 20);
       const newMin = Math.max(base - 6, Math.min(base + 6, base + adj));
       learnedPairParams[sym] = Object.assign({}, PAIR_PARAMS_DEFAULT[sym] || {}, { minScore: Math.min(55, Math.max(38, newMin)) });
@@ -819,7 +823,7 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
     if (cfg.mode === 'live' && cfg.revxApiKey && cfg.revxPrivKey) {
       try {
         state.liveBalance = await revxGetBalance(cfg);
-      } catch(e) { /* zachowaj poprzedniÄ… wartoĹ›Ä‡ */ }
+      } catch(e) { /* zachowaj poprzednią wartość */ }
     }
 
     const cycleJournal = buildCycleJournalEntry({
@@ -844,9 +848,9 @@ if (trades.length >= 25 && milestone > (state.lastEnsembleRebalance || 0)) {
   }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // ANALIZA TECHNICZNA — MULTI-TF
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function calcVWAP(highs, lows, closes, volumes) {
   const n = Math.min(50, highs.length);
   let tpVol = 0, vol = 0;
@@ -1009,10 +1013,10 @@ function calcStats(trades) {
   return { sharpe, sortino, maxDD: +(maxDD * 100).toFixed(1), winRate };
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // FILTR KONTEKST(1H) â†’ SETUP(15m) â†’ TRIGGER(5m) — dodatkowy twardy gate
 // nakladany NA scoring/SMC powyzej (nie zastepuje go). dir = 'LONG'|'SHORT'.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function buildContextGate(trendD, dir) {
   // Daytrading: long OK gdy nie-bear (trendD>=0). Wczesniej >=1 = ZERO longow w flat.
   if (dir === 'LONG') {
@@ -1312,11 +1316,11 @@ score = Math.max(0, Math.min(100, Math.round(score)));
 let aiMethod  = 'Score';
 const obiNorm = ((obiData.ratio || 0.5) - 0.3) / 0.4;
 
-// === NOWY KOD: DYNAMICZNE WAGOWANIE W ZALEĹ»NOĹšCI OD REĹ»IMU ===
+// === NOWY KOD: DYNAMICZNE WAGOWANIE W ZALEŻNOŚCI OD REŻIMU ===
 let dynamicEw = { ...ew };
 
 if (marketRegime === 'strong_bull' || marketRegime === 'strong_bear') {
-  // W silnych trendach ZNACZNIE BARDZIEJ ufaj wskaĹşnikom technicznym niĹĽ modelom AI
+  // W silnych trendach ZNACZNIE BARDZIEJ ufaj wskaźnikom technicznym niż modelom AI
   dynamicEw.score = Math.min(1.3, ew.score * 1.8);
   dynamicEw.nb = Math.max(0.1, ew.nb * 0.3);
   dynamicEw.gbm = Math.max(0.1, ew.gbm * 0.3);
@@ -1503,9 +1507,9 @@ if (buy && shortSignal) {
   };
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// ZARZÄ„DZANIE POZYCJAMI
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// ZARZĄDZANIE POZYCJAMI
+// ═══════════════════════════════════════════════════════════════════════════
 async function checkPositions(cfg, state, env, ql) {
   const updated = [];
   for (const pos of (state.positions || [])) {
@@ -1718,7 +1722,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'BTC 1H ' + (bi.change1h||0).toFixed(2) + '%: pomijam alt LONG ' + sig.sym, 'warn'); return;
   }
 
-  if (corrBlocked(sig.sym, state)) return;
+  if (corrBlocked(sig.sym, state)) { addLog(state, 'Korelacja: ' + sig.sym + ' — pozycja z tej samej grupy już otwarta', 'warn'); return; }
 
   if (sig.spreadPct != null && sig.spreadPct > MAX_SPREAD_PCT) {
     addLog(state, 'Spread ' + (sig.spreadPct * 100).toFixed(3) + '% > max: pomijam ' + sig.sym, 'warn'); return;
@@ -1795,7 +1799,7 @@ async function openTrade(sig, fg, btcDrop, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) — rozmiar x0.5', 'warn');
   }
 
-  const minSize = micro ? 1 : 10;
+  const minSize = micro ? 1 : MIN_ORDER_USD;
   if (posSize < minSize) {
     addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) — pomijam ' + sig.sym, 'warn'); return;
   }
@@ -1939,7 +1943,7 @@ async function openShort(sig, fg, btcInfo, cfg, state, env, nb, gbm, ql, ew) {
     addLog(state, 'Throttle ryzyka (Sharpe=' + st.sharpe + ' maxDD=' + st.maxDD + '%) — rozmiar SHORT x0.5', 'warn');
   }
 
-  const minSize = micro ? 1 : 10;
+  const minSize = micro ? 1 : MIN_ORDER_USD;
   if (posSize < minSize) {
     addLog(state, 'Za mala pozycja (' + posSize.toFixed(2) + '$) — pomijam SHORT ' + sig.sym, 'warn'); return;
   }
@@ -2025,7 +2029,7 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
   const durH     = ((Date.now() - pos.entryTs) / 3600000).toFixed(1);
 
   // BUG FIX #5: to mierzy exec - signalPrice (Revolut X fill vs Bybit mid), co
-  // zawiera basis miedzygieĹ‚dowy + prawdziwy slippage. Prawdziwy slippage
+  // zawiera basis miedzygiełdowy + prawdziwy slippage. Prawdziwy slippage
   // wymagalby mid z Revolut X w momencie decyzji (endpoint niedostepny publicznie).
   const execVsSignalPricePct = price > 0
     ? +(((execPrice - price) / price) * 100).toFixed(3)
@@ -2089,9 +2093,9 @@ async function closePosition(pos, price, reason, cfg, state, ql) {
     'Tryb: ' + (isShort ? 'PAPER (short)' : (cfg.mode === 'live' ? 'LIVE (Revolut X)' : 'PAPER')));
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // DZIENNIK — bot sam wypelnia (cykl / wejscie / wyjscie / post-mortem)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function addJournalEntry(state, entry) {
   if (!state.journal) state.journal = [];
   state.journal = [entry, ...state.journal].slice(0, 500);
@@ -2160,7 +2164,7 @@ function buildEntryJournalEntry(sig, pos, cfg) {
   const isShort = pos.side === 'SHORT';
   const lines = [];
 
-  lines.push((isShort ? 'âšˇ OTWARCIE SHORT (PAPER): ' : 'âšˇ OTWARCIE LONG: ') + sym);
+  lines.push((isShort ? '⚡ OTWARCIE SHORT (PAPER): ' : '⚡ OTWARCIE LONG: ') + sym);
   lines.push('Czas: ' + now.toISOString().replace('T',' ').slice(0,19) + ' UTC');
   lines.push('Cena wejscia: $' + fmtPrice(pos.entry));
   lines.push('Rozmiar: $' + pos.size.toFixed(2) + ' (Kelly)');
@@ -2207,11 +2211,11 @@ function buildExitJournalEntry(pos, closeInfo) {
   const isShort = pos.side === 'SHORT';
   const lines = [];
 
-  const emoji = pnl >= 0 ? 'âś“' : 'âś—';
+  const emoji = pnl >= 0 ? '✓' : '✗';
   lines.push(emoji + ' ZAMKNIECIE ' + (isShort ? 'SHORT (PAPER)' : 'LONG') + ': ' + sym);
   lines.push('Czas: ' + now.toISOString().replace('T',' ').slice(0,19) + ' UTC');
   lines.push('Powod: ' + describeExitReason(reason));
-  lines.push('Cena wejscia: $' + fmtPrice(pos.entry) + ' â†’ wyjscia: $' + fmtPrice(exitPrice));
+  lines.push('Cena wejscia: $' + fmtPrice(pos.entry) + ' → wyjscia: $' + fmtPrice(exitPrice));
   lines.push('Wynik: ' + fmtSignedPct(pnl) + '$ (' + fmtSignedPct(pnlPct) + '%)');
   lines.push('Czas trwania: ' + durH + 'h');
   lines.push('');
@@ -2237,7 +2241,7 @@ function buildCycleJournalEntry(data) {
 
   lines.push('Rezim rynku: ' + describeMarketRegime(btcInfo, fg));
   lines.push('Kapital: $' + balance.toFixed(2) + ' | P&L dzis: ' + fmtSignedPct(dailyPnl) + '$');
-  if (blockReason) lines.push('â›” BLOKADA WEJSC: ' + blockReason);
+  if (blockReason) lines.push('⛔ BLOKADA WEJSC: ' + blockReason);
 
   if (positions.length > 0) {
     lines.push('');
@@ -2282,13 +2286,13 @@ function buildCycleJournalEntry(data) {
 }
 
 function formatJournalForText(entry) {
-  const header = 'â•â•â• ' + (entry.title || entry.type.toUpperCase()) + ' — ' + (entry.tsISO || '').slice(0,16).replace('T',' ') + ' â•â•â•';
+  const header = '═══ ' + (entry.title || entry.type.toUpperCase()) + ' — ' + (entry.tsISO || '').slice(0,16).replace('T',' ') + ' ═══';
   return header + '\n' + entry.lines.join('\n');
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // GUARDS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function isPumpDump(sig) {
   const atrPct = (sig.atrD && sig.price) ? (sig.atrD / sig.price) * 100 : 0.5;
   const vol4Thresh  = 4.0;
@@ -2363,9 +2367,9 @@ function corrBlocked(sym, state) {
   return openInGroup >= 1;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // RISK MANAGEMENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function isMicroAccount(total) { return (isFinite(total) && total > 0 && total < 100); }
 
 function kellySize(cfg, state, total, slPct) {
@@ -2386,7 +2390,7 @@ function kellySize(cfg, state, total, slPct) {
     if (!isFinite(b) || b <= 0) {
       sz = Math.min(fixedSize, Math.max(10, safeTotal * (cfg.riskPct || 2) / 100));
     } else {
-      // Silniejszy shrinkage przy maĹ‚ej prĂłbce
+      // Silniejszy shrinkage przy małej próbce
       const shrinkage = Math.min(1, trades.length / 50);
       p = 0.5 + (p - 0.5) * shrinkage;
       let kelly = (b * p - (1 - p)) / b;
@@ -2443,9 +2447,9 @@ function computeAdaptiveMinScore(trades, baseMin) {
   return baseMin;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// FORMACJE ĹšWIECOWE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// FORMACJE ŚWIECOWE
+// ═══════════════════════════════════════════════════════════════════════════
 const PATTERNS = {
   detect(closes, opens, highs, lows) {
     const n = closes.length;
@@ -2497,9 +2501,9 @@ const PATTERNS = {
   }
 };
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // MODUĹY AI/ML
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function rebalanceEnsemble(ew, nb, gbm, recentTrades) {
   if (!recentTrades || recentTrades.length < 8) return null;
 const newEw = { score: ew.score, nb: ew.nb, gbm: ew.gbm, obi: ew.obi, ql: ew.ql };
@@ -2521,7 +2525,7 @@ recentTrades.forEach(t => {
 if (nbTotal >= 8) {
   const nbAcc = nbCorrect / nbTotal;
   const nbExp = expectancyFactor(t => t.nbLabel === 'BUY');
-  // Shrinkage w stronÄ™ 0.7 z mniejszym mnoĹĽnikiem
+  // Shrinkage w stronę 0.7 z mniejszym mnożnikiem
   let raw = nbAcc * 1.4 * nbExp;
   newEw.nb = +Math.max(0.4, Math.min(1.3, 0.7 + (raw - 0.7) * 0.7)).toFixed(2);
 }
@@ -2565,7 +2569,7 @@ function makeNB(saved) {
       ];
     },
     trainFromTrades(trades) {
-      if (trades.length < 8) return false; // niĹĽsze minimum
+      if (trades.length < 8) return false; // niższe minimum
 const bins = [4, 3, 4, 4, 4, 2];
 const nF = 6;
 const counts = { 0: {}, 1: {} };
@@ -2747,9 +2751,9 @@ function makeQL(saved) {
   return ql;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// WSKAĹąNIKI TECHNICZNE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
+// WSKAŹNIKI TECHNICZNE
+// ═══════════════════════════════════════════════════════════════════════════
 function emaArr(arr, p) {
   if (!arr||!arr.length) return [0];
   const k=2/(p+1);
@@ -2848,9 +2852,9 @@ function atr(h, l, c, p=14) {
   return a;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // MARKET DATA — BYBIT V5
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 const BYBIT_BASE = 'https://api.bybit.com';
 function bybitSymbol(sym) { return sym.replace('XBT', 'BTC'); }
 
@@ -2937,9 +2941,9 @@ async function getFearGreed(state) {
   } catch(e) { return cache; }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // REVOLUT X TRADING — Ed25519 signing
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function revxInstrument(sym) {
   return sym.replace('XBT','BTC').replace('USDT','/USDC');
 }
@@ -3081,9 +3085,9 @@ async function revxMarketSell(sym, baseQty, cfg) {
   return { price: avgPrice, qty: filledQty, orderId: order.id };
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // TELEGRAM
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 async function tgSend(cfg, msg) {
   if (!cfg.tgToken || !cfg.tgChat) return;
   try {
@@ -3095,9 +3099,9 @@ async function tgSend(cfg, msg) {
   } catch(e) {}
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // PIN GATE — HELPERY
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 async function sha256Hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -3150,9 +3154,9 @@ function pinJsonResp(data, status, request) {
   return new Response(JSON.stringify(data), { status: status || 200, headers: Object.assign({ 'Content-Type': 'application/json' }, pinCorsHeaders(request)) });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // KV HELPERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 async function getConfig(env) {
   try { const c = await env.SWINGAI_REVOLUT_KV.get('config'); return c ? JSON.parse(c) : defaultConfig(); }
   catch(e) { return defaultConfig(); }
@@ -3207,9 +3211,9 @@ function fmtPrice(p) {
   return p.toFixed(8);
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 // HELPERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════════════════
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
