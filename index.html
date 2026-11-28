@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
+<script src="crypto-edge.js?v=edge2"></script>
 <meta charset="UTF-8">
 <title>SwingAI DayTrader — Revolut X (AI Agent, Day Trading)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1774,7 +1775,7 @@ async function analyzeSwing(sym) {
   // CRYPTO EDGE: tnie longi bez wolumenu/R:R/momentum
   if (buy && globalThis.CRYPTO_EDGE) {
     try {
-      var _egL = CRYPTO_EDGE.entryGate({ buy: true, side: 'LONG', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      var _egL = CRYPTO_EDGE.entryGate({ buy: true, side: 'LONG', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && (levels.tpPct||levels.tpPctAbs)) || ((typeof CFG!=='undefined'&&CFG.tp)?CFG.tp*100:1.2), slPct: (levels && (levels.slPct||levels.slPctAbs)) || ((typeof CFG!=='undefined'&&CFG.sl)?CFG.sl*100:0.8) }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
       if (!_egL.ok) { buy = false; why.push('EDGE block LONG: ' + _egL.why); }
       else why.push(_egL.why);
     } catch (eEdgeL) {}
@@ -1782,7 +1783,7 @@ async function analyzeSwing(sym) {
   let shortSignal = scoreShort && stagedShort;
   if (shortSignal && globalThis.CRYPTO_EDGE) {
     try {
-      var _egS = CRYPTO_EDGE.entryGate({ shortSignal: true, side: 'SHORT', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && levels.tpPct) || 1.2, slPct: (levels && levels.slPct) || 0.8 }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
+      var _egS = CRYPTO_EDGE.entryGate({ shortSignal: true, side: 'SHORT', score: score, finalProb: finalProb, volR: volR, vol4R: vol4R, price: price, tpPct: (levels && (levels.tpPct||levels.tpPctAbs)) || ((typeof CFG!=='undefined'&&CFG.tp)?CFG.tp*100:1.2), slPct: (levels && (levels.slPct||levels.slPctAbs)) || ((typeof CFG!=='undefined'&&CFG.sl)?CFG.sl*100:0.8) }, { closes: (h1 && h1.c) || [], closes1h: (h1 && h1.c) || [], regime: typeof regime !== 'undefined' ? regime : '' });
       if (!_egS.ok) { shortSignal = false; why.push('EDGE block SHORT: ' + _egS.why); }
       else why.push(_egS.why);
     } catch (eEdgeS) {}
@@ -2706,7 +2707,7 @@ async function openTrade(sig, fg, btcDrop, cachedTotal, cachedUSDC) {
   if (isVolumeAnomaly(sig)) { log('⚠️ Vol anomaly: '+sig.sym+' vol='+sig.volR.toFixed(2)+'x — pomijam','warn'); return; }
   if (isDeadHour()) { log('Dead hour — size cut only','warn'); }
   if (fg && fg.val < 10 && sig.finalProb < (CFG.minScore + 12)/100) {
-    log('Fear&Greed='+fg.val+' panic + low fp — skip','warn'); return;
+    if (!(sig.score >= 55 || sig.finalProb >= 0.55)) { log('Fear&Greed='+fg.val+' panic + low fp — skip','warn'); return; } else { log('Fear&Greed='+fg.val+' panic ale mocny score — LONG dozwolony','warn'); }
   }
   if (false) {
 
@@ -5680,7 +5681,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<script src="crypto-edge.js?v=edge1"></script>
 </body>
 
 </html>
