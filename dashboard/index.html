@@ -1079,6 +1079,15 @@ function kellySize(total) {
   return Math.min(fixedSize, kellySz);
 }
 
+// Limit dziennych transakcji (jak DT_MAX_TRADES_DAY w worker.js) — zamknięte dziś (bez częściowych TP) + otwarte dziś
+const DT_MAX_TRADES_DAY = 8;
+function countTradesToday() {
+  const d0 = new Date(); d0.setUTCHours(0,0,0,0); const t0 = d0.getTime();
+  const closed = (ST.trades||[]).concat(ST.shortTrades||[]).filter(function(t){ return (t.ts||0) >= t0 && t.reason !== 'PARTIAL TP'; }).length;
+  const open = (ST.positions||[]).concat(ST.shortPositions||[]).filter(function(p){ return (p.entryTs||0) >= t0; }).length;
+  return closed + open;
+}
+
 // Micro account mode: balans < 100 — 1 pozycja, 90% kapitalu, brak Kelly cap
 function isMicroAccount(total) { return (isFinite(total) && total > 0 && total < 100); }
 
@@ -2861,6 +2870,7 @@ async function botCycle() {
     var longSigs = sigs.filter(function(s){ return s.buy; }).sort(function(a,b){ return b.finalProb - a.finalProb; });
     for (let i=0; i<longSigs.length; i++) {
       if (ST.positions.length >= CFG.maxPos) break;
+      if (countTradesToday() >= DT_MAX_TRADES_DAY) { log('Max transakcji/dzień ('+DT_MAX_TRADES_DAY+') — brak nowych wejść','warn'); break; }
       log('BUY SIGNAL '+longSigs[i].sym+' score='+longSigs[i].score+' fp='+(longSigs[i].finalProb*100).toFixed(0)+'% — otwieram PAPER','ok');
       await openTrade(longSigs[i], fg, btcDrop, cachedTotal, cachedUSDC);
     }
@@ -2870,6 +2880,7 @@ async function botCycle() {
       for (let i=0; i<sigs.length; i++) {
         if (!sigs[i].shortSignal) continue;
         if (ST.shortPositions.length >= CFG.maxPos) break;
+        if (countTradesToday() >= DT_MAX_TRADES_DAY) break;
         if (btcInfo.pump && sigs[i].sym !== 'BTC_USDC') continue;
         openShortPaper(sigs[i]);
       }
